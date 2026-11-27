@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { listen, loadOffice, removeOffice, type Office } from './helpers'
 import { scanTranscript } from '../server/transcript.js'
 import { estimateMemory, lastUsage } from '../server/meterEstimate.js'
-import { buildAgyArgs, clampReply, routeMessage } from '../scripts/chat-ai-watcher.mjs'
+import { buildAgyArgs, buildAgyStreamArgs, clampReply, routeMessage } from '../scripts/chat-ai-watcher.mjs'
 import { parseWindowsCommandExe } from '../scripts/open-office.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -259,6 +259,9 @@ describe('chat-ai-watcher.mjs (agy -p)', () => {
     ])
     expect(buildAgyArgs('hello', { model: 'default', timeoutSec: 30 })).toEqual([
       '-p', 'hello', '--disable-slash-commands', '--print-timeout', '30s',
+    ])
+    expect(buildAgyStreamArgs()).toEqual([
+      '--model', 'gemini-4-hydrogen-low', '--disable-slash-commands', '--input-format', 'stream-json', '--output-format', 'stream-json', '-p=',
     ])
   })
 })

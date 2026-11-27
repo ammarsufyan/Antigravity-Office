@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * chat-ai-watcher.mjs - Cross-platform Node.js office chat AI watcher powered by `agy -p`.
+ * chat-ai-watcher.mjs - Cross-platform Node.js office chat AI watcher powered by `agy`.
  *
- * Polls the local Antigravity Office server for messages typed by a person,
- * routes them to the matching specialist persona using locales/*.json, and
- * generates a short in-character reply with `agy -p` (with AGENT_OFFICE_RUN=1
- * so Antigravity hooks ignore the bot's own runs).
+ * Keeps a single warm `agy` process running in NDJSON stream-json mode (eliminating
+ * per-message cold starts) and polls the local Antigravity Office server every 1.5s
+ * for messages typed by a person, routing them to the matching specialist persona
+ * using locales/*.json (with AGENT_OFFICE_RUN=1 so Antigravity hooks ignore bot runs).
  */
 
 import { execFileSync, spawn } from 'node:child_process'
@@ -17,6 +17,9 @@ import { fileURLToPath } from 'node:url'
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_LOCALES = resolve(SCRIPT_DIR, '..', 'locales')
 const CJK_RE = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/
+const DEFAULT_MODEL = 'gemini-4-hydrogen-low'
+// Rotate the persistent agy conversation periodically so context stays fast and small
+const MAX_TURNS_PER_SESSION = 25
 
 const ROUTES = [
   ['debugger', 'debugger', 'Debugger'],
@@ -72,9 +75,7 @@ export function clampReply(raw) {
   return text
 }
 
-const DEFAULT_MODEL = 'gemini-4-hydrogen-low'
-
-/** CLI args for a non-interactive one-shot `agy -p` call. */
+/** CLI args for a one-shot `agy -p` call. */
 export function buildAgyArgs(prompt, { model = DEFAULT_MODEL, timeoutSec = 60 } = {}) {
   const m = model && model !== 'default' ? model : ''
   return [
@@ -82,6 +83,18 @@ export function buildAgyArgs(prompt, { model = DEFAULT_MODEL, timeoutSec = 60 } 
     ...(m ? ['--model', m] : []),
     '--disable-slash-commands',
     '--print-timeout', `${timeoutSec}s`,
+  ]
+}
+
+/** CLI args for a persistent NDJSON `agy` stream-json session. */
+export function buildAgyStreamArgs({ model = DEFAULT_MODEL } = {}) {
+  const m = model && model !== 'default' ? model : ''
+  return [
+    ...(m ? ['--model', m] : []),
+    '--disable-slash-commands',
+    '--input-format', 'stream-json',
+    '--output-format', 'stream-json',
+    '-p=',
   ]
 }
 
@@ -103,36 +116,132 @@ function gitBranch() {
   }
 }
 
-function runCli(cli, args, timeoutMs, onChild) {
-  return new Promise(resolve => {
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    const done = res => { if (!settled) { settled = true; resolve(res) } }
-    let child
+/**
+ * Persistent warm `agy` stream-json client.
+ * Boots once and reuses the same process for fast (~2-3s) replies; automatically
+ * restarts on exit, timeout, or after MAX_TURNS_PER_SESSION turns.
+ */
+function createAgySession(cli, { model, timeoutMs }) {
+  let child = null
+  let buf = ''
+  let stderr = ''
+  let turns = 0
+  let pending = null // { resolve, timer }
+  let readyPromise = null
+  let resolveReady = null
+
+  function dropChild() {
+    const old = child
+    child = null
+    buf = ''
+    turns = 0
+    readyPromise = null
+    resolveReady = null
+    if (old) {
+      try { old.stdin?.end() } catch {}
+      try { old.kill() } catch {}
+    }
+  }
+
+  function finishPending(res) {
+    if (!pending) return
+    const p = pending
+    pending = null
+    clearTimeout(p.timer)
+    p.resolve(res)
+  }
+
+  function ensureStarted() {
+    if (child && !child.killed && child.exitCode === null) return readyPromise
+    stderr = ''
+    buf = ''
+    turns = 0
+    readyPromise = new Promise(res => { resolveReady = res })
+
     try {
-      child = spawn(cli, args, {
+      child = spawn(cli, buildAgyStreamArgs({ model }), {
         env: { ...process.env, AGENT_OFFICE_RUN: '1' },
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
     } catch (err) {
-      done({ code: 1, stdout: '', stderr: err.message })
-      return
+      resolveReady?.()
+      finishPending({ stdout: '', stderr: err.message })
+      return readyPromise
     }
-    onChild?.(child)
-    child.stdout?.on('data', d => { stdout += d })
+
+    // Fallback in case init takes unusually long; allow sending after 5s
+    const initTimer = setTimeout(() => resolveReady?.(), 5000)
+    initTimer.unref?.()
+
     child.stderr?.on('data', d => { stderr += d })
-    const timer = setTimeout(() => { try { child.kill() } catch {} }, timeoutMs)
-    child.on('error', err => { clearTimeout(timer); done({ code: 1, stdout, stderr: err.message }) })
-    child.on('close', code => { clearTimeout(timer); onChild?.(null); done({ code, stdout, stderr }) })
-  })
+    child.stdout?.on('data', d => {
+      buf += d.toString('utf8')
+      let idx
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim()
+        buf = buf.slice(idx + 1)
+        if (!line) continue
+        let obj
+        try { obj = JSON.parse(line) } catch { continue }
+        if (obj.event === 'init') {
+          clearTimeout(initTimer)
+          resolveReady?.()
+        } else if (obj.event === 'result') {
+          turns++
+          const text = typeof obj.result?.response === 'string' ? obj.result.response : ''
+          const err = typeof obj.result?.error === 'string' ? obj.result.error : ''
+          finishPending({ stdout: text, stderr: err || stderr })
+          stderr = ''
+          if (turns >= MAX_TURNS_PER_SESSION) dropChild()
+        }
+      }
+    })
+    child.on('error', err => {
+      clearTimeout(initTimer)
+      resolveReady?.()
+      finishPending({ stdout: '', stderr: err.message })
+      dropChild()
+    })
+    child.on('close', () => {
+      clearTimeout(initTimer)
+      resolveReady?.()
+      finishPending({ stdout: '', stderr })
+      child = null
+      readyPromise = null
+      resolveReady = null
+    })
+
+    return readyPromise
+  }
+
+  async function ask(prompt) {
+    await ensureStarted()
+    if (!child || !child.stdin || child.killed || child.exitCode !== null) {
+      return { stdout: '', stderr: stderr || 'agy process is not running' }
+    }
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        finishPending({ stdout: '', stderr: 'timed out waiting for agy reply' })
+        dropChild()
+      }, timeoutMs)
+      pending = { resolve, timer }
+      try {
+        child.stdin.write(JSON.stringify({ event: 'user', message: { role: 'user', content: prompt } }) + '\n')
+      } catch (err) {
+        finishPending({ stdout: '', stderr: err.message })
+        dropChild()
+      }
+    })
+  }
+
+  return { warm: () => { ensureStarted() }, ask, stop: dropChild }
 }
 
 export async function startWatcher(env = process.env) {
   const port = Number(env.AGENT_OFFICE_PORT) || 3334
   const server = `http://127.0.0.1:${port}`
-  const pollMs = Math.max(100, Math.round((Number(env.CHAT_AI_POLL_INTERVAL) || 8) * 1000))
+  const pollMs = Math.max(250, Math.round((Number(env.CHAT_AI_POLL_INTERVAL) || 1.5) * 1000))
   const model = (env.CHAT_AI_MODEL || DEFAULT_MODEL).trim()
   const timeoutSec = Math.max(5, Number(env.CHAT_AI_TIMEOUT) || 60)
   const maxPerMin = Math.max(1, Number(env.CHAT_AI_MAX_REPLIES_PER_MIN) || 5)
@@ -164,17 +273,20 @@ export async function startWatcher(env = process.env) {
     saveTs(lastTs)
   }
 
-  console.log(`[chat-ai] Started (pid ${process.pid}), polling ${server} every ${pollMs / 1000}s, cli=${cli}, model=${model || 'default'}`)
+  const agy = createAgySession(cli, { model, timeoutMs: (timeoutSec + 5) * 1000 })
+  // Pre-warm agy immediately so the very first chat message avoids cold-start delay
+  agy.warm()
+
+  console.log(`[chat-ai] Started (pid ${process.pid}), polling ${server} every ${pollMs / 1000}s, cli=${cli} (warm stream), model=${model || 'default'}`)
 
   const callTimes = []
   let busy = false
-  let activeChild = null
   let stopped = false
 
   const cleanup = () => {
     if (stopped) return
     stopped = true
-    if (activeChild) { try { activeChild.kill() } catch {} }
+    agy.stop()
     try { unlinkSync(pidFile) } catch {}
     console.log('[chat-ai] Stopped')
     process.exit(0)
@@ -210,14 +322,15 @@ export async function startWatcher(env = process.env) {
     const branch = gitBranch()
     const prompt = [
       persona,
-      `You are responding as ${name}, the office ${role}. Stay in character.`,
+      `You are responding as ${name}, the office ${role}. Stay in character. Do not call any tools.`,
       branch ? `Git branch: ${branch}` : '',
       `Recent conversation:\n${context}`,
       `Reply to the latest message naturally. Keep it short (8-12 words). Continue the conversation — reference previous messages if relevant.${langName ? `\nReply in ${langName}.` : ''}`,
     ].filter(Boolean).join('\n\n')
 
     callTimes.push(Date.now())
-    const res = await runCli(cli, buildAgyArgs(prompt, { model, timeoutSec }), (timeoutSec + 5) * 1000, c => { activeChild = c })
+    const startedAt = Date.now()
+    const res = await agy.ask(prompt)
     const reply = clampReply(res.stdout)
     if (!reply) {
       console.log(`[chat-ai] Empty reply from ${cli}${res.stderr ? `: ${res.stderr.trim()}` : ''}`)
@@ -232,7 +345,8 @@ export async function startWatcher(env = process.env) {
       body: JSON.stringify({ sender: name, role, text: reply }),
       signal: AbortSignal.timeout(5000),
     }).catch(() => null)
-    if (posted?.ok) console.log(`[chat-ai] Replied as ${name}: ${reply}`)
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1)
+    if (posted?.ok) console.log(`[chat-ai] Replied as ${name} (${elapsed}s): ${reply}`)
     else console.log(`[chat-ai] Failed to post reply (HTTP ${posted?.status ?? 'network error'})`)
   }
 
