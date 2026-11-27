@@ -39,8 +39,8 @@
  * the link is there to paste), 1 when there is no token or no server.
  */
 
-import { spawn } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import helpers from '../electron/helpers.cjs'
@@ -50,6 +50,34 @@ import { parseAllowedHost, parseAllowedHosts, renderQr } from '../server/lan.js'
 const { runtimeDirFromEnv, readOfficeToken, officeLink, writeRedirectPage, officeProofMatches, healthChallenge } = helpers
 
 export const REDIRECT_FILE_NAME = 'open-office.html'
+
+/** Extract the executable path from a Windows registry shell open command line. */
+export function parseWindowsCommandExe(commandLine) {
+  if (typeof commandLine !== 'string') return null
+  const s = commandLine.trim()
+  const m = /^"([^"]+)"/.exec(s) || /^(\S+)/.exec(s)
+  return m?.[1] || null
+}
+
+/**
+ * Windows default HTTP browser executable (e.g. Chrome/Edge), or null.
+ * Opening a local .html redirect file via explorer.exe launches the `.html`
+ * file editor (often VS Code) instead of the user's web browser; querying the
+ * `http` URL association avoids that while keeping the token off the CLI.
+ */
+function windowsDefaultBrowser() {
+  try {
+    const progOut = execFileSync('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\http\\UserChoice', '/v', 'ProgId'], { encoding: 'utf8', timeout: 2000, windowsHide: true })
+    const progId = /ProgId\s+REG_SZ\s+(\S+)/.exec(progOut)?.[1]
+    if (!progId || !/^[A-Za-z0-9._-]+$/.test(progId)) return null
+    const cmdOut = execFileSync('reg', ['query', `HKCR\\${progId}\\shell\\open\\command`, '/ve'], { encoding: 'utf8', timeout: 2000, windowsHide: true })
+    const rawCmd = /REG_(?:EXPAND_)?SZ\s+(.+)/.exec(cmdOut)?.[1]
+    const exe = parseWindowsCommandExe(rawCmd)
+    return exe && existsSync(exe) ? exe : null
+  } catch {
+    return null
+  }
+}
 
 /** The opener for this platform: [command, args] that open `target` in the default app. */
 export function openerFor(platform, target) {
@@ -167,7 +195,8 @@ export async function openOffice({ env = process.env, platform = process.platfor
     err.write(`Could not write the redirect page (${e.message}): open the link above yourself.\n`)
     return 0
   }
-  const [command, args] = openerFor(platform, target)
+  const winBrowser = platform === 'win32' ? windowsDefaultBrowser() : null
+  const [command, args] = winBrowser ? [winBrowser, [target]] : openerFor(platform, target)
   if (await runOpener(command, args, env)) {
     out.write(`Opened it in your browser (via ${fileURLToPath(target)}).\n`)
   } else {

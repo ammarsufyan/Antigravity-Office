@@ -86,7 +86,7 @@ describe('JSON configs keep what is not ours', () => {
       install(tool, opts())
       const cfg = JSON.parse(read(file))
       check(cfg)
-      expect(read(file)).toContain('office-relay.py')
+      expect(read(file)).toContain(tool === 'antigravity' ? 'antigravity-relay.mjs' : 'office-relay.py')
       expect(read(`${file}.claude-office.bak`)).toBe(original)
       install(tool, opts())
       expect(read(`${file}.claude-office.bak`)).toBe(original)
@@ -104,7 +104,7 @@ describe('JSON configs keep what is not ours', () => {
       uninstall(tool, { home })
       const after = JSON.parse(read(file))
       expect(after['added-later']).toEqual({ note: 'mine' })
-      expect(read(file)).not.toContain('office-relay.py')
+      expect(read(file)).not.toContain(tool === 'antigravity' ? 'antigravity-relay.mjs' : 'office-relay.py')
       check(after)
     })
   }
@@ -114,12 +114,13 @@ describe('JSON configs keep what is not ours', () => {
     expect(install('codex', opts()).notes.join('\n')).toMatch(/\/hooks/)
   })
 
-  // Why Codex too: nobody on the project has run it live yet (Task 8 was skipped)
-  it('every tool is labelled experimental, with the issue link', () => {
-    for (const tool of ['codex', 'gemini', 'antigravity', 'kimi', 'opencode']) {
+  it('non-native tools are labelled experimental, while Antigravity is native Node.js', () => {
+    for (const tool of ['codex', 'gemini', 'kimi', 'opencode']) {
       mkdirSync(join(home, TOOL_DIRS[tool]), { recursive: true })
       expect(install(tool, opts()).notes.join('\n'), tool).toContain('experimental — tell us if it works')
     }
+    mkdirSync(join(home, TOOL_DIRS.antigravity), { recursive: true })
+    expect(install('antigravity', opts()).notes.join('\n')).not.toContain('experimental')
   })
 
   it('points each command at the relay with the tool id', () => {
@@ -128,10 +129,13 @@ describe('JSON configs keep what is not ours', () => {
     expect(read(targetFile('codex', home))).toContain(`python3 -I \\"${HOOKS_DIR}/office-relay.py\\" codex`)
   })
 
-  it('passes Antigravity the event name, since its payload has none', () => {
-    mkdirSync(join(home, '.gemini/antigravity-cli'), { recursive: true })
+  it('connects Antigravity with the cross-platform Node relay and non-blocking events (no PreToolUse)', () => {
+    mkdirSync(join(home, '.gemini/antigravity'), { recursive: true })
     install('antigravity', opts())
-    expect(read(targetFile('antigravity', home))).toContain('antigravity PreToolUse')
+    const text = read(targetFile('antigravity', home))
+    expect(text).toContain('antigravity-office')
+    expect(text).toContain('antigravity-relay.mjs\\" PostToolUse')
+    expect(text).not.toContain('PreToolUse')
   })
 })
 

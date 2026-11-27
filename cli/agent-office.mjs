@@ -61,7 +61,7 @@ export const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..
  * office-relay.py and opencode-plugin.js are what `install-hooks --tool <id>`
  * points other AI tools at (scripts/install-tool-hooks.mjs).
  */
-export const HOOK_FILES = ['agent-tracker.sh', 'agent-tracker.py', 'status-line.sh', 'install-hooks.sh', 'hooks.json', 'office-relay.py', 'opencode-plugin.js']
+export const HOOK_FILES = ['agent-tracker.sh', 'agent-tracker.py', 'antigravity-relay.mjs', 'status-line.sh', 'install-hooks.sh', 'hooks.json', 'office-relay.py', 'opencode-plugin.js']
 
 /** Flags each command accepts (besides the global --port, --help and --version). */
 export const COMMAND_FLAGS = {
@@ -296,13 +296,14 @@ async function start(ctx, { detach, open }) {
     logFd = openSync(logFile, 'a', 0o600)
     chmodSync(logFile, 0o600)
   }
-  // detached: its own process group, as start-office.sh gives the server, so
-  // stop-office.sh can signal the group and a terminal Ctrl+C reaches only
-  // this CLI, which then stops the server itself
+  // On Unix, detached gives the server its own process group so Ctrl+C reaches
+  // only this CLI. On Windows, detached: true sets CREATE_NEW_CONSOLE, which
+  // hides foreground stdout/stderr (including startup errors) in a separate window.
   const child = spawn(process.execPath, [join(root, 'server', 'index.js')], {
     env: serverEnv,
     stdio: ['ignore', detach ? logFd : 'inherit', detach ? logFd : 'inherit'],
-    detached: true,
+    detached: process.platform !== 'win32' || detach,
+    windowsHide: detach,
   })
   if (logFd !== null) closeSync(logFd)
   const pidFile = join(ctx.officeHome, 'server.pid')
@@ -319,7 +320,7 @@ async function start(ctx, { detach, open }) {
     await sleep(HEALTH_POLL_MS)
   }
   if (!up) {
-    if (!exited) { try { process.kill(-child.pid, 'SIGTERM') } catch { /* already gone */ } }
+    if (!exited) { try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, 'SIGTERM') } catch { try { child.kill() } catch {} } }
     dropPidFile(pidFile, child.pid)
     err.write(exited
       ? `The office server exited during start (code ${exited.code ?? exited.signal})${detach ? ` — see ${logFile}` : ''}.\n`
@@ -337,8 +338,8 @@ async function start(ctx, { detach, open }) {
 
   out.write('Press Ctrl+C to stop the office.\n')
   const stopChild = () => {
-    try { process.kill(-child.pid, 'SIGTERM') } catch { /* already gone */ }
-    setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone */ } }, STOP_GRACE_MS).unref()
+    try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, 'SIGTERM') } catch { try { child.kill() } catch {} }
+    setTimeout(() => { try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, 'SIGKILL') } catch {} }, STOP_GRACE_MS).unref()
   }
   let interrupted = false
   const onSignal = () => { interrupted = true; out.write('\nStopping the office...\n'); stopChild() }
@@ -351,6 +352,25 @@ async function start(ctx, { detach, open }) {
   if (interrupted) return 130
   // Stopped from elsewhere (agent-office stop) is a normal end
   return result.signal ? 0 : (result.code ?? 0)
+}
+
+/** Cross-platform stop by pid files (used on Windows where bash stop-office.sh is unavailable). */
+function stopWindows(ctx) {
+  let stopped = 0
+  for (const [label, file] of [['Server', 'server.pid'], ['Chat watcher', 'chat-watcher.pid'], ['Vite dev server', 'vite.pid']]) {
+    const full = join(ctx.officeHome, file)
+    if (!existsSync(full)) continue
+    const pid = Number(readFileSync(full, 'utf8').trim())
+    try { unlinkSync(full) } catch {}
+    if (!Number.isInteger(pid) || pid <= 0) continue
+    try {
+      process.kill(pid, 'SIGTERM')
+      ctx.out.write(`${label} stopped (pid ${pid})\n`)
+      stopped++
+    } catch {}
+  }
+  if (!stopped) ctx.out.write('Nothing was running.\n')
+  return 0
 }
 
 /** Run a bundled bash script with output passed through to out / err. */
@@ -449,7 +469,9 @@ export async function main(argv, { root = PACKAGE_ROOT, env = process.env, out =
     case 'open':
       return openOffice({ env: runEnv, print: flags.has('--print'), out, err })
     case 'stop':
-      return runBash(ctx, join(root, 'scripts', 'stop-office.sh'), flags.has('--force') || flags.has('-f') ? ['--force'] : [])
+      return process.platform === 'win32'
+        ? stopWindows(ctx)
+        : runBash(ctx, join(root, 'scripts', 'stop-office.sh'), flags.has('--force') || flags.has('-f') ? ['--force'] : [])
     case 'install-hooks':
       return parsed.tool ? toolHooksCommand(ctx, parsed.tool, false) : installHooks(ctx, [...flags])
     case 'uninstall-hooks':

@@ -428,7 +428,7 @@ export function mountTasks(app, {
   /** Read one board's directory and broadcast it if it changed. Returns whether it did. */
   function scan(key, t = now()) {
     const entry = watched.get(key)
-    if (!entry) return false
+    if (!entry || entry.external) return false
     lastScanAt = t
     const { tasks: files, dirMtimeMs } = readTaskFiles(entry.dir, entry.cache)
     const tasks = files.map(f => f.task)
@@ -535,6 +535,44 @@ export function mountTasks(app, {
       safeScan(id)
     }
     syncTeams(id, byLead ?? readTeams())
+    return true
+  }
+
+  /**
+   * Populate a session's board from an in-memory step list (Antigravity's
+   * update_steps hook payload: [{ title, status }]), without touching disk.
+   */
+  function setExternalTasks(sessionId, rawSteps, t = now()) {
+    if (typeof sessionId !== 'string' || !sessionId || !Array.isArray(rawSteps)) return false
+    const statusOf = s => (s === 'in_progress' ? 'in_progress' : s === 'done' || s === 'skipped' || s === 'failed' || s === 'completed' ? 'completed' : 'pending')
+    const tasks = rawSteps
+      .filter(s => s && typeof s === 'object' && typeof s.title === 'string' && s.title.trim())
+      .slice(0, MAX_TASKS)
+      .map((s, i) => ({
+        id: String(i + 1),
+        subject: s.title.trim().slice(0, MAX_SUBJECT_LEN),
+        status: statusOf(s.status),
+        blockedBy: [],
+      }))
+    let entry = watched.get(sessionId)
+    if (!entry) {
+      entry = { ...newEntry(sessionId, '', null), external: true }
+      watched.set(sessionId, entry)
+    } else {
+      entry.external = true
+    }
+    entry.tasks = tasks
+    const shown = capTasks(tasks).map(publicTask)
+    const sig = JSON.stringify(shown)
+    if (sig === entry.sig) return false
+    const hadBoard = entry.board !== null
+    entry.sig = sig
+    const project = sessions.get(sessionId)?.project
+    entry.board = shown.length
+      ? { sessionId, ...(project ? { project } : {}), tasks: shown, counts: countTasks(tasks), updatedAt: t }
+      : null
+    if (!entry.board && !hadBoard) return false
+    broadcast({ type: 'task_board', sessionId, board: entry.board, timestamp: t })
     return true
   }
 
@@ -662,7 +700,7 @@ export function mountTasks(app, {
   })
 
   const api = {
-    start, stop, reconcile, track, untrack, rescan, noteEvent, scan, boards, stats,
+    start, stop, reconcile, track, untrack, rescan, noteEvent, scan, boards, stats, setExternalTasks,
     dir: tasksDir,
     teamsDir,
     get running() { return timer !== null },

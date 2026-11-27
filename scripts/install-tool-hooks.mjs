@@ -35,7 +35,9 @@ export const TOOL_IDS = Object.freeze(['codex', 'gemini', 'antigravity', 'kimi',
 const LABELS = { codex: 'Codex', gemini: 'Gemini CLI', antigravity: 'Antigravity', kimi: 'Kimi', opencode: 'OpenCode' }
 const ISSUE = 'https://github.com/W17ant/Claude-Office/issues/115'
 const RELAY = 'office-relay.py'
-const AGY_NAME = 'claude-office'
+const AGY_RELAY = 'antigravity-relay.mjs'
+const AGY_NAME = 'antigravity-office'
+const AGY_LEGACY_NAME = 'claude-office'
 const KIMI_START = '# >>> claude-office'
 const KIMI_END = '# <<< claude-office'
 const PLUGIN_MARK = "Claude Office's OpenCode plugin"
@@ -46,8 +48,8 @@ const REPO_HOOKS = join(dirname(dirname(fileURLToPath(import.meta.url))), 'hooks
 const EVENTS = {
   codex: ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'PreCompact', 'PostCompact', 'SubagentStart', 'SubagentStop', 'Stop', 'Interrupt'],
   gemini: ['SessionStart', 'SessionEnd', 'BeforeAgent', 'AfterAgent', 'BeforeTool', 'AfterTool', 'Notification', 'PreCompress'],
-  // Why flat vs grouped: agy's tool events take { matcher, hooks }, the others a plain handler list
-  antigravity: { SessionStart: 'flat', PreInvocation: 'flat', PreToolUse: 'grouped', PostToolUse: 'grouped', Stop: 'flat' },
+  // Why no PreToolUse: Antigravity requires an explicit allow/deny/ask decision on PreToolUse ({} denies every tool)
+  antigravity: { SessionStart: 'flat', PreInvocation: 'flat', PostInvocation: 'flat', PostToolUse: 'grouped', Stop: 'flat' },
   // Why only these: Kimi refuses to start on an event outside its fixed list (HookEventType, src/kimi_cli/hooks/config.py)
   kimi: ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'StopFailure', 'PreCompact', 'PostCompact', 'SubagentStart', 'SubagentStop'],
 }
@@ -61,7 +63,7 @@ function toolPresent(tool, home) {
   switch (tool) {
     case 'codex': return existsSync(join(home, '.codex'))
     case 'gemini': return existsSync(join(home, '.gemini'))
-    case 'antigravity': return existsSync(join(home, '.gemini', 'antigravity-cli')) || existsSync(join(home, '.gemini', 'config'))
+    case 'antigravity': return existsSync(join(home, '.gemini', 'antigravity')) || existsSync(join(home, '.gemini', 'antigravity-cli')) || existsSync(join(home, '.gemini', 'config'))
     case 'kimi': return existsSync(dirname(targetFile('kimi', home)))
     case 'opencode': return existsSync(join(home, '.config', 'opencode'))
     default: return false
@@ -123,13 +125,15 @@ function backupOnce(file, original) {
 }
 
 function relayCommand(hooksDir, tool, event) {
-  const relay = join(hooksDir, RELAY)
-  // Why: the path goes into a shell command line inside JSON / TOML strings
-  if (/["$`\\\n]/.test(relay)) throw new Error(`The hooks folder path ${hooksDir} has a character a hook command cannot carry (" $ \` \\ or a newline)`)
+  // Normalize Windows backslashes to forward slashes so JSON/TOML shell commands stay valid cross-platform
+  const file = tool === 'antigravity' ? AGY_RELAY : RELAY
+  const relay = join(hooksDir, file).replace(/\\/g, '/')
+  if (/["$`\n]/.test(relay)) throw new Error(`The hooks folder path ${hooksDir} has a character a hook command cannot carry (" $ \` or a newline)`)
+  if (tool === 'antigravity') return `node "${relay}"${event ? ` ${event}` : ''}`
   return `python3 -I "${relay}" ${tool}${event ? ` ${event}` : ''}`
 }
 
-const isOurs = h => typeof h?.command === 'string' && h.command.includes(RELAY)
+const isOurs = h => typeof h?.command === 'string' && (h.command.includes(RELAY) || h.command.includes(AGY_RELAY))
 
 // ── JSON configs (Codex, Gemini, Antigravity) ───────────────────────────────
 
@@ -138,6 +142,7 @@ function stripJson(tool, cfg) {
   const out = structuredClone(cfg)
   if (tool === 'antigravity') {
     delete out[AGY_NAME]
+    delete out[AGY_LEGACY_NAME]
     return out
   }
   if (!out.hooks || typeof out.hooks !== 'object') return out
@@ -320,8 +325,7 @@ export function install(tool, { home = homedir(), hooksDir }) {
   else if (tool === 'opencode') changed = installOpencode(file, hooksDir, notes)
   else changed = installJson(tool, file, hooksDir)
   if (tool === 'codex') notes.push('Codex runs a new hook only after you approve it: start codex and type /hooks once.')
-  // Why every tool: none has been run live by the project yet; fixtures come from docs and forks
-  notes.push(`${LABELS[tool]} support is experimental — tell us if it works: ${ISSUE}`)
+  if (tool !== 'antigravity') notes.push(`${LABELS[tool]} support is experimental — tell us if it works: ${ISSUE}`)
   notes.push(`Restart any open ${LABELS[tool]} session to pick it up.`)
   return { changed, notes }
 }

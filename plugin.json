@@ -1,0 +1,9 @@
+{
+  "name": "antigravity-office",
+  "description": "Pixel-art virtual office that visualizes Antigravity agents, subagents, MCP calls, tasks, and signals in real time.",
+  "homepage": "https://github.com/W17ant/Claude-Office",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/W17ant/Claude-Office.git"
+  }
+}

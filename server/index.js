@@ -571,6 +571,9 @@ function discoverMcpServers() {
   const servers = new Set()
 
   const candidates = [
+    join(homedir(), '.gemini', 'antigravity', 'mcp_config.json'),
+    join(homedir(), '.gemini', 'config', 'mcp_config.json'),
+    join(process.cwd(), '.agents', 'mcp_config.json'),
     join(homedir(), '.claude', 'settings.json'),
     join(homedir(), '.claude.json'),
     join(process.cwd(), '.claude.json'),
@@ -1494,6 +1497,8 @@ const KNOWN_EVENT_TYPES = new Set([
   // TaskCreated / TaskCompleted: the task board looks at the session's list now (server/tasks.js)
   'task_created',
   'task_completed',
+  // Antigravity update_steps: pushes the session's checklist directly onto the whiteboard
+  'task_board_sync',
   // ElicitationResult: the MCP question was answered (an Elicitation is a session_needs_you)
   'session_elicitation_done',
   // TeammateIdle: an agent-team teammate went idle; the team's board is read again (server/tasks.js)
@@ -2182,6 +2187,16 @@ function ingestEvent(body) {
   }
   const signals = sanitiseSignals(body.signals)
 
+  if (sanitised.type === 'task_board_sync') {
+    if (sanitised.sessionId) {
+      touchSession(sanitised)
+      tasks.setExternalTasks(sanitised.sessionId, body.steps)
+    }
+    health.markHook()
+    status.noteHook(sanitised)
+    return { sanitised, event: null }
+  }
+
   const event = processEvent(sanitised)
   if (event) {
     broadcast(event)
@@ -2254,11 +2269,22 @@ app.post('/hook/:tool', requireToken, (req, res) => {
   const events = translateFor(tool, req.body, typeof req.query.event === 'string' ? req.query.event : undefined)
   if (events === null) return res.status(404).json({ error: `Unknown tool: ${String(tool).slice(0, 40)}` })
   let count = 0
+  let turnEndSessionId = null
   for (const e of events) {
     // Why force client: the route, not the payload, says which tool this is
-    if (!ingestEvent({ ...e, client: tool }).error) count++
+    const out = ingestEvent({ ...e, client: tool })
+    if (!out.error) {
+      count++
+      if (out.sanitised.type === 'session_turn_end' && out.sanitised.sessionId) turnEndSessionId = out.sanitised.sessionId
+    }
   }
   if (count === 0) return res.status(204).end()
+  // Antigravity Stop hook with a queued chat prompt marker: hand over the oldest queued prompt with HMAC proof
+  const nonce = typeof req.query.nonce === 'string' ? clampString(req.query.nonce, 64) : undefined
+  if (tool === 'antigravity' && req.query.claim === '1' && nonce && turnEndSessionId) {
+    const item = deliverQueuedPrompt(turnEndSessionId)
+    if (item) return res.json({ ok: true, count, prompt: { id: item.id, text: item.text, proof: promptProof(nonce, item) } })
+  }
   res.json({ ok: true, count })
 })
 
@@ -2797,7 +2823,7 @@ function inspectMain(session, { withText }) {
   return {
     id: mainActivityId(session.id),
     kind: 'main',
-    name: 'Claude',
+    name: session.client === 'antigravity' ? 'Antigravity' : 'Claude',
     role: 'assistant',
     state: main.state,
     status: session.lastStatus,
@@ -3657,8 +3683,9 @@ function applyEvent(body) {
       if (inFlight.length) setMainState(session, 'waiting', `turn ended, ${inFlight.length} background task(s) still running`, now)
       else setMainState(session, 'idle', 'turn ended', now)
       console.log(`[main] ${sessionName(session)}: reply: ${logText(text)}`)
-      // Claude's words become a chat row too (role 'assistant', msg_type 'reply')
-      const row = text ? addMessage({ sender: 'Claude', role: 'assistant', text, msgType: 'reply' }) : null
+      // Main agent's words become a chat row too (role 'assistant', msg_type 'reply')
+      const replySender = session.client === 'antigravity' ? 'Antigravity' : 'Claude'
+      const row = text ? addMessage({ sender: replySender, role: 'assistant', text, msgType: 'reply' }) : null
       saveAgents()
       return {
         type: 'session_turn_end',

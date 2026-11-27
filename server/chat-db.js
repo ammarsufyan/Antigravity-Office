@@ -5,10 +5,58 @@
  * Uses WAL mode for concurrent read performance.
  */
 
-import Database from 'better-sqlite3'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mkdirSync, chmodSync, existsSync } from 'fs'
+
+/**
+ * Open SQLite via better-sqlite3 when installed, else Node's built-in node:sqlite
+ * (DatabaseSync, available since Node 22.5) so Windows / newer Node versions run
+ * without compiling native C++ bindings.
+ */
+async function openDatabase(dbPath) {
+  try {
+    const { default: Database } = await import('better-sqlite3')
+    const instance = new Database(dbPath)
+    instance.pragma('busy_timeout = 5000')
+    instance.pragma('journal_mode = WAL')
+    return instance
+  } catch {
+    const { DatabaseSync } = await import('node:sqlite')
+    const raw = new DatabaseSync(dbPath)
+    raw.exec('PRAGMA busy_timeout = 5000')
+    raw.exec('PRAGMA journal_mode = WAL')
+    const plain = row => (row && typeof row === 'object' ? { ...row } : row)
+    return {
+      exec: sql => raw.exec(sql),
+      pragma: str => raw.exec(`PRAGMA ${str}`),
+      close: () => raw.close(),
+      prepare(sql) {
+        const stmt = raw.prepare(sql)
+        if (typeof stmt.setAllowBareNamedParameters === 'function') stmt.setAllowBareNamedParameters(true)
+        if (typeof stmt.setAllowUnknownNamedParameters === 'function') stmt.setAllowUnknownNamedParameters(true)
+        return {
+          run: (...args) => stmt.run(...args),
+          get: (...args) => plain(stmt.get(...args)),
+          all: (...args) => stmt.all(...args).map(plain),
+        }
+      },
+      transaction(fn) {
+        return (...args) => {
+          raw.exec('BEGIN')
+          try {
+            const out = fn(...args)
+            raw.exec('COMMIT')
+            return out
+          } catch (err) {
+            try { raw.exec('ROLLBACK') } catch {}
+            throw err
+          }
+        }
+      },
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Initialise DB
@@ -34,9 +82,7 @@ const DB_PATH = join(RUNTIME_DIR, 'chat.db')
 const prevUmask = process.platform === 'win32' ? null : process.umask(0o077)
 let db
 try {
-  db = new Database(DB_PATH)
-  // WAL mode for better concurrent read/write performance
-  db.pragma('journal_mode = WAL')
+  db = await openDatabase(DB_PATH)
 } finally {
   if (prevUmask !== null) process.umask(prevUmask)
 }
@@ -166,14 +212,14 @@ export function addMessage({ sender, role = 'default', text, isSystem = false, t
  *                off by default, see TRANSCRIPT_FILTER
  */
 export function getMessages({ since = 0, limit = 50, recipient = null, transcript = false } = {}) {
-  const params = { since, limit, transcript: transcript ? 1 : 0 }
+  const tr = transcript ? 1 : 0
   if (recipient) {
-    return stmtGetForRecipient.all({ ...params, recipient })
+    return stmtGetForRecipient.all({ since, limit, transcript: tr, recipient })
   }
   if (since) {
-    return stmtGetSince.all(params)
+    return stmtGetSince.all({ since, limit, transcript: tr })
   }
-  return stmtGetAll.all(params)
+  return stmtGetAll.all({ limit, transcript: tr })
 }
 
 /**

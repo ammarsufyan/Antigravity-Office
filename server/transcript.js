@@ -67,35 +67,56 @@ export function clampLine(text, max) {
 /** What a tool call was about, in a few words: the file, the command, the pattern. */
 export function summariseInput(name, input) {
   if (!input || typeof input !== 'object') return ''
-  const str = v => (typeof v === 'string' ? v : v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
+  // Antigravity transcripts serialize scalar tool_calls args as JSON-encoded strings (e.g. "\"npm test\"")
+  const unwrap = s => {
+    if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+      try { const v = JSON.parse(s); if (typeof v === 'string') return v } catch {}
+    }
+    return s
+  }
+  const str = v => (typeof v === 'string' ? unwrap(v) : v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
   switch (name) {
     case 'Read': case 'Write': case 'Edit': case 'MultiEdit': case 'NotebookEdit':
-      return str(input.file_path || input.notebook_path)
-    case 'Bash':
-      return str(input.command || input.description)
-    case 'Grep': case 'Glob':
-      return str(input.pattern)
-    case 'Agent': case 'Task':
-      return str(input.description || input.prompt)
-    case 'WebFetch': case 'WebSearch':
+    case 'read_file': case 'view_file': case 'write_file': case 'write_to_file': case 'edit_file': case 'replace_file_content': case 'multi_replace_file_content':
+      return str(input.file_path || input.notebook_path || input.Path || input.AbsolutePath || input.TargetFile)
+    case 'Bash': case 'run_command':
+      return str(input.command || input.CommandLine || input.description)
+    case 'Grep': case 'Glob': case 'grep_search':
+      return str(input.pattern || input.Query)
+    case 'Agent': case 'Task': case 'invoke_subagent':
+      return str(input.description || input.Role || input.prompt || input.Prompt)
+    case 'WebFetch': case 'WebSearch': case 'search_web':
       return str(input.url || input.query)
+    case 'call_mcp_tool':
+      return [str(input.ServerName), str(input.ToolName)].filter(Boolean).join('/')
     case 'Skill':
       return str(input.skill)
     default: {
       const first = Object.values(input).find(v => typeof v === 'string' && v.trim())
-      return first ?? (Object.keys(input).length ? JSON.stringify(input) : '')
+      return first ? unwrap(first) : (Object.keys(input).length ? JSON.stringify(input) : '')
     }
   }
 }
 
 function parseTimestamp(record) {
-  const t = record.timestamp
+  const t = record.timestamp ?? record.created_at
   if (typeof t === 'number') return t
   if (typeof t === 'string') {
     const ms = Date.parse(t)
     if (!Number.isNaN(ms)) return ms
   }
   return null
+}
+
+/** Antigravity PLANNER_RESPONSE token sum (input_tokens + cache_read_tokens + output_tokens), or null. */
+function antigravityTokens(record) {
+  let sum = 0
+  let seen = false
+  for (const key of ['input_tokens', 'cache_read_tokens', 'output_tokens']) {
+    const n = record[key]
+    if (typeof n === 'number' && Number.isFinite(n) && n >= 0) { sum += n; seen = true }
+  }
+  return seen ? sum : null
 }
 
 /**
@@ -134,7 +155,24 @@ export function scanTranscript(text, { maxEntries = DEFAULT_MAX_ENTRIES, maxChar
     if (!line.trim()) continue
     let record
     try { record = JSON.parse(line) } catch { continue }
-    if (!record || typeof record !== 'object' || record.type !== 'assistant') continue
+    if (!record || typeof record !== 'object') continue
+    if (record.type === 'PLANNER_RESPONSE') {
+      const tokens = antigravityTokens(record)
+      if (tokens !== null) usage = { tokens, ...(typeof record.model === 'string' && record.model ? { model: record.model.slice(0, 80) } : {}) }
+      const entry = { at: parseTimestamp(record), texts: [], tools: [], inputs: [] }
+      const reply = typeof record.content === 'string' ? record.content : (typeof record.response === 'string' ? record.response : '')
+      if (reply.trim()) entry.texts.push(reply)
+      if (Array.isArray(record.tool_calls)) {
+        for (const call of record.tool_calls) {
+          if (!call || typeof call !== 'object' || typeof call.name !== 'string') continue
+          entry.tools.push(call.name)
+          entry.inputs.push(summariseInput(call.name, call.args))
+        }
+      }
+      if (entry.tools.length || entry.texts.length) order.push(entry)
+      continue
+    }
+    if (record.type !== 'assistant') continue
     const message = record.message
     if (!message || typeof message !== 'object') continue
     const tokens = usageTokens(message.usage)

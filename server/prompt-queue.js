@@ -50,9 +50,15 @@ export const MAX_PROMPT_LEN = 2000
 export const PROMPT_TTL_MS = 60 * 60_000
 /** The marker directory's name inside the runtime dir. */
 export const MARKER_DIR_NAME = 'prompt-queue'
-// A session id becomes a file name: only the shape Claude Code uses (a UUID),
-// never a path separator or a dot. The hook checks the same pattern.
-export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/
+// A session id becomes a marker file name: UUIDs (Claude Code) or antigravity:<id>
+// (colon becomes '_' on disk so Windows filenames stay valid).
+export const SESSION_ID_PATTERN = /^(?:antigravity:)?[A-Za-z0-9_-]{1,80}$/
+const MARKER_FILE_PATTERN = /^(?:antigravity_)?[A-Za-z0-9_-]{1,80}$/
+
+/** Windows-safe marker file name for a session id. */
+export function markerFileName(sessionId) {
+  return String(sessionId).replace(/^antigravity:/, 'antigravity_')
+}
 
 /**
  * A per-session queue of chat prompts, with the marker files the hook checks.
@@ -65,7 +71,7 @@ export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/
 export function createPromptQueue({ dir, now = Date.now, ttlMs = PROMPT_TTL_MS, maxPerSession = MAX_QUEUED_PER_SESSION, onExpire = () => {} }) {
   /** @type {Map<string, Array<{ id: string, text: string, from: string, queuedAt: number }>>} */
   const queues = new Map()
-  const markerOf = sessionId => join(dir, sessionId)
+  const markerOf = sessionId => join(dir, markerFileName(sessionId))
 
   function syncMarker(sessionId) {
     try {
@@ -154,7 +160,7 @@ export function createPromptQueue({ dir, now = Date.now, ttlMs = PROMPT_TTL_MS, 
       let names = []
       try { names = readdirSync(dir) } catch { return }
       for (const name of names) {
-        if (!SESSION_ID_PATTERN.test(name)) continue
+        if (!MARKER_FILE_PATTERN.test(name)) continue
         try { unlinkSync(join(dir, name)) } catch {}
       }
     },
@@ -190,9 +196,10 @@ export function mentionSlug(value) {
  * @returns {string | undefined}
  */
 export function mentionName(session) {
-  // Why: another AI tool's session (it has a client) cannot claim a prompt; its hook is not Claude Code's
-  if (session.client) return undefined
-  return mentionSlug(session.registry?.name || session.title || session.project || String(session.id ?? '').slice(0, 8))
+  // Only native hooks (Claude Code or Antigravity) can claim queued prompts on Stop
+  if (session.client && session.client !== 'antigravity') return undefined
+  const rawId = String(session.id ?? '').replace(/^antigravity:/, '')
+  return mentionSlug(session.registry?.name || session.title || session.project || rawId.slice(0, 8))
 }
 
 // Why 120: past any session name; the rest of the line is the prompt
@@ -227,11 +234,11 @@ const MIN_ID_PREFIX = 6
  * @returns {{ session: object } | { ambiguous: object[] } | null}
  */
 export function resolveMention(sessions, name) {
-  const live = Array.from(sessions).filter(s => s && s.state !== 'ended' && !s.client)
+  const live = Array.from(sessions).filter(s => s && s.state !== 'ended' && (!s.client || s.client === 'antigravity'))
   const tiers = [
     s => mentionSlug(s.registry?.name) === name || mentionSlug(s.title) === name,
     s => mentionSlug(s.project) === name,
-    s => name.length >= MIN_ID_PREFIX && String(s.id ?? '').toLowerCase().startsWith(name),
+    s => name.length >= MIN_ID_PREFIX && String(s.id ?? '').replace(/^antigravity:/, '').toLowerCase().startsWith(name),
   ]
   for (const test of tiers) {
     const hits = live.filter(test)

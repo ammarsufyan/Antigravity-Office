@@ -1,0 +1,44 @@
+{
+  "antigravity-office": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-relay.mjs SessionStart",
+        "timeout": 2
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-relay.mjs PreInvocation",
+        "timeout": 2
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-relay.mjs PostInvocation",
+        "timeout": 2
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/antigravity-relay.mjs PostToolUse",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-relay.mjs Stop",
+        "timeout": 2
+      }
+    ]
+  }
+}

@@ -88,6 +88,16 @@ export const MODEL_WINDOWS = Object.freeze({
   'claude-opus-4-1':       { window: DEFAULT_WINDOW, name: 'Opus 4.1' },
   'claude-opus-4-5':       { window: DEFAULT_WINDOW, name: 'Opus 4.5' },
   'claude-opus-4-6':       { window: DEFAULT_WINDOW, name: 'Opus 4.6' },
+  // Antigravity / Gemini models (1M context window)
+  'gemini-2.5-pro':        { window: EXTENDED_WINDOW, name: 'Gemini 2.5 Pro' },
+  'gemini-2.5-flash':      { window: EXTENDED_WINDOW, name: 'Gemini 2.5 Flash' },
+  'gemini-2.5-flash-lite': { window: EXTENDED_WINDOW, name: 'Gemini 2.5 Flash Lite' },
+  'gemini-3-pro':          { window: EXTENDED_WINDOW, name: 'Gemini 3 Pro' },
+  'gemini-3-flash':        { window: EXTENDED_WINDOW, name: 'Gemini 3 Flash' },
+  'gemini-3.5-pro':        { window: EXTENDED_WINDOW, name: 'Gemini 3.5 Pro' },
+  'gemini-4-neon':         { window: EXTENDED_WINDOW, name: 'Gemini 4 Neon' },
+  'gemini-4-pro':          { window: EXTENDED_WINDOW, name: 'Gemini 4 Pro' },
+  'gemini-4-flash':        { window: EXTENDED_WINDOW, name: 'Gemini 4 Flash' },
 })
 
 const ONE_M_TAG = /\[1m\]/i
@@ -96,14 +106,16 @@ const MAX_MODEL_LEN = 80
 /**
  * The table key for a model id: lower case, no [1m] tag, no provider prefix
  * (us.anthropic.…, anthropic.…), no Vertex @date, no Bedrock -v1:0, no
- * -YYYYMMDD or -latest suffix. '' for anything that is not a string.
+ * -YYYYMMDD or -latest suffix, and no Antigravity effort tier on gemini-* ids.
  */
 export function canonicalModel(id) {
   if (typeof id !== 'string') return ''
   let m = id.trim().toLowerCase().replace(/\[1m\]/g, '')
   const at = m.indexOf('claude-')
   if (at > 0) m = m.slice(at)
-  return m.replace(/@.*$/, '').replace(/-v\d+(:\d+)?$/, '').replace(/-(\d{8}|latest)$/, '')
+  m = m.replace(/@.*$/, '').replace(/-v\d+(:\d+)?$/, '').replace(/-(\d{8}|latest)$/, '')
+  if (m.startsWith('gemini-')) m = m.replace(/-(?:low|medium|high|xhigh|max|preview|exp)$/, '')
+  return m
 }
 
 /**
@@ -143,31 +155,42 @@ function modelId(val) {
 }
 
 const ASSISTANT = /"type"\s*:\s*"assistant"/
+const PLANNER = /"type"\s*:\s*"PLANNER_RESPONSE"/
 const COMPACT = /"subtype"\s*:\s*"compact_boundary"/
 
 /**
  * What the end of a transcript says about the context window, reading from
  * the last line back:
  *   { tokens, input, output, model?, requestedModel? }  the last main-thread
- *       assistant record with a usage (input = input + both cache counts)
+ *       assistant/PLANNER_RESPONSE record with a usage (input = input + cache counts)
  *   { compacted: true }  a compact_boundary came after it: the window was just
  *       emptied and the next reply, which will say how full it is, is not in yet
  *   null  neither in this text
- * Claude Code writes one record per content block with the whole message's
- * usage on each, so the last record is the last message. Sidechain records
- * and `<synthetic>` ones (an API error or an interrupt, all-zero usage) are
- * skipped. Only lines that can be one of the two records are parsed. Pure.
  */
 export function lastUsage(text) {
   const lines = String(text ?? '').split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
     const assistant = ASSISTANT.test(line)
-    if (!assistant && !COMPACT.test(line)) continue
+    const planner = !assistant && PLANNER.test(line)
+    if (!assistant && !planner && !COMPACT.test(line)) continue
     let record
     try { record = JSON.parse(line) } catch { continue }
     if (!record || typeof record !== 'object' || record.isSidechain === true) continue
     if (record.type === 'system' && record.subtype === 'compact_boundary') return { compacted: true }
+    if (record.type === 'PLANNER_RESPONSE') {
+      const count = key => (typeof record[key] === 'number' && Number.isFinite(record[key]) && record[key] >= 0 ? record[key] : null)
+      const inp = count('input_tokens')
+      const cache = count('cache_read_tokens')
+      const out = count('output_tokens')
+      if (inp === null && cache === null && out === null) continue
+      const input = (inp ?? 0) + (cache ?? 0)
+      const output = out ?? 0
+      const reading = { tokens: input + output, input, output }
+      const model = modelId(record.model)
+      if (model) reading.model = model
+      return reading
+    }
     if (record.type !== 'assistant') continue
     const message = record.message
     if (!message || typeof message !== 'object' || message.model === '<synthetic>') continue

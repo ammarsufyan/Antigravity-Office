@@ -49,16 +49,22 @@ export function toolStatus(tool, input) {
   const i = input && typeof input === 'object' ? input : {}
   const file = p => String(p ?? '').split(/[\\/]/).pop()
   switch (tool) {
-    case 'Bash': case 'shell': case 'run_shell_command': case 'bash': case 'Shell':
-      return `running: ${String(i.command ?? i.cmd ?? i.description ?? '').slice(0, 60)}`
-    case 'Read': case 'read_file': case 'read':
-      return `reading ${file(i.file_path ?? i.path ?? i.filePath)}`
-    case 'Write': case 'write_file': case 'write':
-      return `writing ${file(i.file_path ?? i.path ?? i.filePath)}`
-    case 'Edit': case 'replace': case 'edit': case 'apply_patch':
-      return i.file_path || i.path || i.filePath ? `editing ${file(i.file_path ?? i.path ?? i.filePath)}` : 'editing files'
-    case 'Grep': case 'grep': case 'search_file_content':
-      return `searching for '${String(i.pattern ?? '').slice(0, 30)}'`
+    case 'Bash': case 'shell': case 'run_shell_command': case 'bash': case 'Shell': case 'run_command':
+      return `running: ${String(i.CommandLine ?? i.command ?? i.cmd ?? i.description ?? '').slice(0, 60)}`
+    case 'Read': case 'read_file': case 'view_file': case 'read':
+      return `reading ${file(i.Path ?? i.AbsolutePath ?? i.file_path ?? i.path ?? i.filePath)}`
+    case 'Write': case 'write_file': case 'write_to_file': case 'write':
+      return `writing ${file(i.Path ?? i.TargetFile ?? i.file_path ?? i.path ?? i.filePath)}`
+    case 'Edit': case 'edit_file': case 'replace_file_content': case 'multi_replace_file_content': case 'replace': case 'edit': case 'apply_patch':
+      return i.Path || i.TargetFile || i.file_path || i.path || i.filePath ? `editing ${file(i.Path ?? i.TargetFile ?? i.file_path ?? i.path ?? i.filePath)}` : 'editing files'
+    case 'Grep': case 'grep': case 'grep_search': case 'search_file_content': case 'search_web':
+      return `searching for '${String(i.query ?? i.Query ?? i.pattern ?? '').slice(0, 30)}'`
+    case 'call_mcp_tool':
+      return `using ${String(i.ServerName ?? 'mcp').slice(0, 30)}/${String(i.ToolName ?? 'tool').slice(0, 30)}`
+    case 'invoke_subagent':
+      return `spawning ${String(i.Role ?? i.TypeName ?? 'subagent').slice(0, 40)}`
+    case 'update_steps':
+      return 'updating plan'
     default:
       return `using ${String(tool || 'a tool').slice(0, 40)}`
   }
