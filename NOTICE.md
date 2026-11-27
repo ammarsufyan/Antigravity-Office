@@ -1,5 +1,9 @@
 # Notice
 
+## Upstream Attribution
+
+Antigravity Office is a derivative fork of **[Claude Office](https://github.com/W17ant/Claude-Office)** created by **[W17ANT](https://github.com/W17ant)** and its upstream contributors (see [CHANGELOG.md](CHANGELOG.md)). The original isometric office design, pixel art, multi-room layout, seasons, sound effects, server architecture, and MIT-licensed codebase originate from `W17ant/Claude-Office`.
+
 ## What the MIT licence covers
 
 The code in this repository and the original pixel art (the default office,

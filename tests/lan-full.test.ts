@@ -176,7 +176,7 @@ describe('server/lan.js: LAN_FULL_ROUTES is an allowlist', () => {
   it('no route the server guards with the office token is on it', () => {
     // Every `app.<method>('<path>', requireToken...` in the server sources
     const guarded: Array<[string, string]> = []
-    for (const file of ['index.js', 'permissions.js', 'status.js', 'tasks.js', 'sessions.js', 'health.js']) {
+    for (const file of ['index.js', 'permissions.js', 'status.js', 'tasks.js', 'health.js']) {
       const src = readFileSync(join(__dirname, '..', 'server', file), 'utf8')
       for (const m of src.matchAll(/app\.(get|post|put|delete|patch)\('([^']+)',\s*requireToken(?:Rpc)?\b/g)) {
         guarded.push([m[1].toUpperCase(), m[2].replace(/:[a-zA-Z]+/g, 'x1')])

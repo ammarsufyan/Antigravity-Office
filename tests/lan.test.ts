@@ -228,7 +228,7 @@ const PAYLOADS: Record<string, Message> = {
 /** Every `type: '...'` and session event type the server sources can emit. */
 function serverEventTypes(): Set<string> {
   const types = new Set<string>()
-  for (const file of ['index.js', 'status.js', 'permissions.js', 'health.js', 'tasks.js', 'sessions.js']) {
+  for (const file of ['index.js', 'status.js', 'permissions.js', 'health.js', 'tasks.js']) {
     const src = readFileSync(join(__dirname, '..', 'server', file), 'utf8')
     for (const m of src.matchAll(/type: '([a-z_]+)'/g)) types.add(m[1])
     for (const m of src.matchAll(/(?:sessionEvent|toEvent)\([^,()]+, '([a-z_]+)'\)/g)) types.add(m[1])

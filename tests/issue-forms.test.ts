@@ -12,7 +12,7 @@ const load = (name: string) => yaml.load(readFileSync(join(DIR, name), 'utf8')) 
 const item = (form: any, id: string) => form.body.find((b: any) => b.id === id)
 
 // Why these four, in this order: every way the README tells people to run the office
-const HOW_RUN = ['npx @w17ant/agent-office', 'Desktop app', 'From a checkout (npm run …)', 'Claude Code plugin']
+const HOW_RUN = ['npx antigravity-office', 'Desktop app', 'From a checkout (npm run …)', 'Antigravity plugin']
 
 describe.each([
   ['bug_report.yml', 'bug'],
@@ -33,10 +33,10 @@ describe.each([
     expect(how.attributes.options).toEqual(HOW_RUN)
   })
 
-  it('asks which AI tool, Claude Code and Other included', () => {
+  it('asks which AI tool, Antigravity and Other included', () => {
     const tool = item(form, 'ai-tool')
     expect(tool.type).toBe('dropdown')
-    expect(tool.attributes.options).toEqual(expect.arrayContaining(['Claude Code', 'Other']))
+    expect(tool.attributes.options).toEqual(expect.arrayContaining(['Antigravity', 'Other']))
   })
 })
 

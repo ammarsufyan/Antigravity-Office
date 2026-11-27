@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url)
 const u = require('../electron/update-check.cjs')
 const h = require('../electron/helpers.cjs')
 
-const PAGE = 'https://github.com/W17ant/Claude-Office/releases/tag/v1.2.0'
+const PAGE = 'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1.2.0'
 const release = (overrides: Record<string, unknown> = {}) => ({ tag_name: 'v1.2.0', html_url: PAGE, draft: false, prerelease: false, ...overrides })
 
 describe('compareVersions', () => {
@@ -47,25 +47,25 @@ describe('compareVersions', () => {
 describe('releasePageUrl', () => {
   it('accepts the repository\'s release pages', () => {
     expect(u.releasePageUrl(PAGE)).toBe(PAGE)
-    expect(u.releasePageUrl('https://github.com/W17ant/Claude-Office/releases/latest')).toBe('https://github.com/W17ant/Claude-Office/releases/latest')
+    expect(u.releasePageUrl('https://github.com/ammarsufyan/Antigravity-Office/releases/latest')).toBe('https://github.com/ammarsufyan/Antigravity-Office/releases/latest')
   })
 
   it('refuses anything else', () => {
     for (const bad of [
       undefined, null, 42, '',
-      'http://github.com/W17ant/Claude-Office/releases/tag/v1.2.0',
-      'https://github.com/W17ant/Claude-Office/releases/',
-      'https://github.com/W17ant/Claude-Office/issues/1',
-      'https://github.com/W17ant/Claude-Office-evil/releases/tag/v1',
-      'https://github.com.evil.example/W17ant/Claude-Office/releases/tag/v1',
-      'https://evil.example/https://github.com/W17ant/Claude-Office/releases/',
-      'https://github.com/W17ant/Claude-Office/releases/../../../evil/repo',
-      'https://github.com/W17ant/Claude-Office/releases/%2e%2e/%2e%2e/evil',
-      'https://github.com/W17ant/Claude-Office/releases/tag/v1?redirect=https://evil.example',
-      'https://github.com/W17ant/Claude-Office/releases/tag/v1#x',
-      'https://github.com/W17ant/Claude-Office/releases/tag/v1 javascript:alert(1)',
-      'https://github.com/W17ant/Claude-Office/releases/tag/v1\nSet-Cookie: x',
-      'https://github.com/W17ant/Claude-Office/releases/tag/\\..\\evil',
+      'http://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1.2.0',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/',
+      'https://github.com/ammarsufyan/Antigravity-Office/issues/1',
+      'https://github.com/ammarsufyan/Antigravity-Office-evil/releases/tag/v1',
+      'https://github.com.evil.example/ammarsufyan/Antigravity-Office/releases/tag/v1',
+      'https://evil.example/https://github.com/ammarsufyan/Antigravity-Office/releases/',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/../../../evil/repo',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/%2e%2e/%2e%2e/evil',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1?redirect=https://evil.example',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1#x',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1 javascript:alert(1)',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1\nSet-Cookie: x',
+      'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/\\..\\evil',
       PAGE + 'x'.repeat(400),
     ]) {
       expect(u.releasePageUrl(bad), String(bad)).toBeNull()
@@ -109,7 +109,7 @@ describe('fetchLatestRelease', () => {
     const { get, calls } = fakeGet(200, JSON.stringify(release()))
     expect(await u.fetchLatestRelease({ version: '1.1.2', get })).toMatchObject({ tag_name: 'v1.2.0' })
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe('https://api.github.com/repos/W17ant/Claude-Office/releases/latest')
+    expect(calls[0].url).toBe('https://api.github.com/repos/ammarsufyan/Antigravity-Office/releases/latest')
     expect(calls[0].opts.headers).toEqual({ 'User-Agent': 'Agent-Office/1.1.2', Accept: 'application/vnd.github+json' })
     expect(calls[0].opts.timeout).toBe(u.UPDATE_CHECK_TIMEOUT_MS)
   })
@@ -149,10 +149,10 @@ describe('createUpdateChecker', () => {
     expect(notify).toHaveBeenCalledTimes(1)
 
     // A newer one is
-    latest = release({ tag_name: 'v1.3.0', html_url: 'https://github.com/W17ant/Claude-Office/releases/tag/v1.3.0' })
+    latest = release({ tag_name: 'v1.3.0', html_url: 'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1.3.0' })
     await make().check()
     expect(notify).toHaveBeenCalledTimes(2)
-    expect(notify).toHaveBeenLastCalledWith({ version: 'v1.3.0', url: 'https://github.com/W17ant/Claude-Office/releases/tag/v1.3.0' })
+    expect(notify).toHaveBeenLastCalledWith({ version: 'v1.3.0', url: 'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1.3.0' })
   })
 
   it('failures are silent: a null fetch, a throwing fetch, junk in the state file', async () => {

@@ -466,12 +466,11 @@ describe('the page: est. marker and the needs-the-status-line tooltips', () => {
     expect(formatMemory(session({ source: 'statusline', estimate: undefined, context: { used: 37.5, size: 200_000, input: 0, output: 0 } }))).toBe('38%')
   })
 
-  it('the MEMORY tooltip says it comes from the transcript because no status line is registered', () => {
+  it('the MEMORY tooltip says it comes from the transcript', () => {
     const tip = estimateTip(session())
     expect(tip[0]).toBe('MEMORY — Claude-Office: 4% of the context window (44,051 / 1,000,000 tokens) · est.')
     expect(tip[1]).toContain('estimated from the session transcript')
-    expect(tip[1]).toContain('no status line is registered')
-    expect(tip[2]).toContain("1,000,000 tokens for claude-haiku-5-5 (Claude Code's model table)")
+    expect(tip[2]).toContain('1,000,000 tokens for claude-haiku-5-5 (model table)')
     expect(tip[3]).toBe(`payroll and electricity need the status line: ${STATUS_LINE_INSTALL}`)
 
     const unknown = estimateTip(session({ modelId: 'claude-next', context: { used: 10, size: 200_000, input: 20_000, output: 0 }, estimate: { tokens: 20_000, basis: 'unknown', approximate: true } }))
@@ -483,15 +482,13 @@ describe('the page: est. marker and the needs-the-status-line tooltips', () => {
     expect(estimateTip(session({ context: { used: null, size: 1_000_000, input: 0, output: 0 }, estimate: { tokens: null, basis: 'model', approximate: false, compacted: true } }))[1]).toContain('compacted')
   })
 
-  it('PAYROLL and ELECTRICITY name the status line and the install command', () => {
-    // The status line alone: next to the plugin, npm run install-hooks would register every hook a second time
-    expect(STATUS_LINE_INSTALL).toBe('npm run install-status-line')
+  it('PAYROLL and ELECTRICITY explain status updates and memory estimation', () => {
     const payroll = needsStatusLineTip('PAYROLL', [session()])
-    expect(payroll[0]).toBe('PAYROLL needs the status line — Claude Code reports cost only to its statusLine command')
-    expect(payroll).toContain('register it with: npm run install-status-line (from the Claude-Office checkout)')
+    expect(payroll[0]).toContain('PAYROLL needs status updates')
+    expect(payroll).toContain(`configure hooks with: ${STATUS_LINE_INSTALL} (from the Antigravity-Office checkout)`)
     expect(payroll).toContain('Claude-Office: needs the status line')
     const electricity = needsStatusLineTip('ELECTRICITY', [session(), session({ sessionId: 'b', project: 'other' })])
     expect(electricity[0]).toContain('tokens per minute')
-    expect(electricity[1]).toContain('these 2 sessions')
+    expect(electricity[1]).toContain('2 Antigravity session transcripts')
   })
 })

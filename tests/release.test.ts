@@ -30,7 +30,7 @@ describe('the electron-builder configuration a release is built from', () => {
 
   it('publishes to a GitHub draft, in the repository package.json names', () => {
     expect(build.publish).toEqual({ provider: 'github', releaseType: 'draft' })
-    expect(pkg.repository.url).toMatch(/^https:\/\/github\.com\/W17ant\/Claude-Office(\.git)?$/)
+    expect(pkg.repository.url).toMatch(/^https:\/\/github\.com\/ammarsufyan\/Antigravity-Office(\.git)?$/)
   })
 
   it('builds macOS as one dmg and one zip per architecture, never universal — after-pack.cjs refuses that', () => {
@@ -107,45 +107,5 @@ describe('.github/workflows/release.yml', () => {
 
   it('ships the default boss: the example office.config.json is never copied in', () => {
     expect(workflow).not.toMatch(/cp office\.config\.example\.json/)
-  })
-})
-
-describe('scripts/sync-plugin-version.mjs (the `version` script)', () => {
-  const dirs: string[] = []
-  afterEach(() => {
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
-  })
-
-  /** A checkout-shaped scratch dir: package.json at `version`, the real plugin manifest. */
-  function scratch(version: string) {
-    const dir = mkdtempSync(join(tmpdir(), 'sync-plugin-version-'))
-    dirs.push(dir)
-    mkdirSync(join(dir, '.claude-plugin'))
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'agent-office', version }) + '\n')
-    writeFileSync(join(dir, '.claude-plugin', 'plugin.json'), read('.claude-plugin/plugin.json'))
-    return dir
-  }
-
-  it('is what `npm version` runs, and stages the manifest for the version commit', () => {
-    expect(pkg.scripts.version).toBe('node scripts/sync-plugin-version.mjs && git add .claude-plugin/plugin.json')
-  })
-
-  it('rewrites the version line of plugin.json and nothing else', () => {
-    const dir = scratch('9.9.9')
-    execFileSync(process.execPath, [SYNC, dir])
-    const after = readFileSync(join(dir, '.claude-plugin', 'plugin.json'), 'utf8')
-    expect(JSON.parse(after).version).toBe('9.9.9')
-    expect(after.replace('"version": "9.9.9"', `"version": "${pkg.version}"`)).toBe(read('.claude-plugin/plugin.json'))
-  })
-
-  it('leaves a manifest that is already current as it is, and fails on one without a version line', () => {
-    const dir = scratch(pkg.version)
-    const file = join(dir, '.claude-plugin', 'plugin.json')
-    const before = readFileSync(file, 'utf8')
-    execFileSync(process.execPath, [SYNC, dir])
-    expect(readFileSync(file, 'utf8')).toBe(before)
-
-    writeFileSync(file, '{ "name": "agent-office" }\n')
-    expect(() => execFileSync(process.execPath, [SYNC, dir], { stdio: 'pipe' })).toThrow()
   })
 })

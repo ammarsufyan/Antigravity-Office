@@ -1,76 +1,46 @@
 #!/usr/bin/env node
 /**
- * doctor.mjs — `npm run doctor`: why does nothing appear in the office?
+ * doctor.mjs — `npm run doctor`: why does nothing appear in Antigravity Office?
  *
  * One PASS / WARN / FAIL line per check, the install / uninstall / start
  * commands at the end, exit 1 when anything FAILed. Nothing here writes.
  *
- *   node         a version the server and better-sqlite3 run on (20+)
- *   hooks        ~/.claude/settings.json — or $CLAUDE_CONFIG_DIR/settings.json —
- *                runs hooks/agent-tracker.sh for every event the installer
- *                registers, from a file that exists. Same rule as
- *                hooks/install-hooks.sh: an entry is ours when a word of its
- *                command is a path ending in hooks/agent-tracker.sh. Or the
- *                agent-office plugin is
- *                installed: enabledPlugins in settings.json plus a copy under
- *                plugins/ (installed_plugins.json, cache/, marketplaces/).
- *   status line  statusLine + subagentStatusLine run hooks/status-line.sh —
- *                the meters; a plugin cannot register statusLine, so plugin
- *                installs are pointed at npm run install-status-line (the
- *                status line alone: the installer's hooks next to the
- *                plugin's would deliver every event twice)
- *   tools        python3, bash, curl on PATH (the hook and the installer use them)
+ *   node         Node 22+ (required for built-in node:sqlite / better-sqlite3)
+ *   hooks        ~/.gemini/config/hooks.json runs hooks/antigravity-relay.mjs
+ *                for every event listed in root hooks.json, from a file that exists.
+ *   agy          optional: `agy` CLI on PATH (used by chat-watcher for AI replies)
  *   server       GET http://127.0.0.1:$AGENT_OFFICE_PORT/health answers, and
  *                whether a hook has reached it since it started
- *   token        $AGENT_OFFICE_HOME/auth-token exists and is mode 0600
+ *   token        $AGENT_OFFICE_HOME/auth-token exists (and mode 0600 on POSIX)
  *   dist         the UI is built (npm run build); else Vite on :3333 is the way in
- *   hook files   hooks/agent-tracker.py sits next to agent-tracker.sh (the .sh
- *                runs it; without it every event is dropped silently), and the
- *                scripts bash runs have LF endings: a Windows clone made before
- *                .gitattributes keeps CRLF in files that have not changed since
- *
- * `runDoctor(opts)` is exported and returns the results without printing, so
- * tests/doctor.test.ts drives it against temp directories; the tests also
- * spawn the script for its exit code. `--json` prints the results as JSON.
+ *   hook files   hooks/antigravity-relay.mjs exists
  */
 
-import { accessSync, constants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { status as toolStatus, TOOL_IDS, toolLabel } from './install-tool-hooks.mjs'
+import { targetFile } from './install-tool-hooks.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const TRACKER_NAME = 'agent-tracker.sh'
-const STATUS_NAME = 'status-line.sh'
-// Why 22: better-sqlite3 13 (package.json) declares engines node >=22; its
-// Node-API prebuilts ship inside the npm package, so 22+ needs no compiler
+const RELAY_NAME = 'antigravity-relay.mjs'
+const AGY_KEY = 'antigravity-office'
 export const MIN_NODE_MAJOR = 22
 export const DEFAULT_PORT = 3334
-const PLUGIN_NAME = 'agent-office'
 
 export const PASS = 'PASS'
 export const WARN = 'WARN'
 export const FAIL = 'FAIL'
 
-/**
- * The fix commands a checkout's report names. cli/agent-office.mjs passes its
- * own set (npx ...) through runDoctor's `commands` option; `dev` may be null
- * there (no Vite in a published package), and the notes then leave it out.
- */
 export const COMMANDS = {
-  install:   'npm run install-hooks',
-  hooksOnly: 'bash hooks/install-hooks.sh --no-status-line',
-  statusLine: 'npm run install-status-line',
-  uninstall: 'npm run uninstall-hooks',
-  uninstallHooks: 'npm run uninstall-hooks -- --no-status-line',
-  plugin:    'claude plugin marketplace add W17ant/Claude-Office && claude plugin install agent-office@agent-office',
-  unplugin:  'claude plugin uninstall agent-office@agent-office',
-  start:     'npm run build && npm run server',
-  startAlt:  'bash scripts/start-office.sh',
-  dev:       'npm run dev',
-  open:      'npm run open',
-  restoreHooks: 'git pull (or reinstall the plugin) to bring it back',
+  install: 'npm run install-antigravity',
+  uninstall: 'npm run uninstall-antigravity',
+  start: 'npm run build && npm run start:antigravity',
+  startAlt: 'npm run server',
+  chatWatcher: 'npm run chat-watcher',
+  dev: 'npm run dev',
+  open: 'npm run open',
+  restoreHooks: 'git pull to restore hooks/antigravity-relay.mjs',
   distMissing: 'npm run build for the one-port page, or npm run dev for the Vite dev server on :3333',
 }
 
@@ -90,7 +60,7 @@ function readJson(path) {
   }
 }
 
-/** Split a shell command into words, honouring quotes and backslashes (enough for a hook command). */
+/** Split a command string into words, honouring quotes and POSIX escapes. */
 export function shellWords(command) {
   const words = []
   let cur = ''
@@ -121,18 +91,12 @@ export function shellWords(command) {
   return words
 }
 
-/**
- * The path a hook command runs that ends in hooks/`name` (the layout of every
- * checkout and of the plugin), or null when the command is not ours — the
- * installer's own rule (its `script_path`). Containing the name is not
- * enough: my-status-line.sh or ~/.claude/status-line.sh is someone else's.
- */
-export function scriptPathIn(command, name) {
+/** The path a hook command runs that ends in hooks/<name>, or null when not ours. */
+export function scriptPathIn(command, name = RELAY_NAME) {
   if (typeof command !== 'string' || !command.includes(name)) return null
   return shellWords(command).find(w => basename(w) === name && basename(dirname(w)) === 'hooks') ?? null
 }
 
-/** ~ and $HOME as a shell would expand them in a hook command */
 function expandHome(p, home) {
   if (p === '~') return home
   if (p.startsWith('~/')) return join(home, p.slice(2))
@@ -149,13 +113,16 @@ function samePath(a, b) {
 
 /** First executable `name` on PATH, or null. */
 export function which(name, path = process.env.PATH ?? '') {
+  const exts = process.platform === 'win32' && !/\.[a-z0-9]+$/i.test(name) ? ['.exe', '.cmd', '.bat', ''] : ['']
   for (const dir of path.split(delimiter)) {
     if (!dir) continue
-    const candidate = join(dir, name)
-    try {
-      accessSync(candidate, constants.X_OK)
-      if (statSync(candidate).isFile()) return candidate
-    } catch {}
+    for (const ext of exts) {
+      const candidate = join(dir, name + ext)
+      try {
+        accessSync(candidate, constants.F_OK)
+        if (statSync(candidate).isFile()) return candidate
+      } catch {}
+    }
   }
   return null
 }
@@ -170,10 +137,11 @@ export function formatSpan(ms) {
   return `${Math.floor(h / 24)} d`
 }
 
-/** The events the installer registers: hooks/hooks.json is the plugin's copy of the same list (tests/plugin.test.ts keeps them equal). */
+/** The Antigravity hook events registered by hooks.json at the repo root. */
 export function expectedEvents(root = ROOT) {
-  const { value } = readJson(join(root, 'hooks', 'hooks.json'))
-  return value?.hooks && typeof value.hooks === 'object' ? Object.keys(value.hooks) : []
+  const { value } = readJson(join(root, 'hooks.json'))
+  const block = value && typeof value === 'object' ? (value[AGY_KEY] ?? value.hooks ?? value) : null
+  return block && typeof block === 'object' ? Object.keys(block) : ['SessionStart', 'PreInvocation', 'PostInvocation', 'PostToolUse', 'Stop']
 }
 
 // ---------------------------------------------------------------------------
@@ -183,209 +151,76 @@ export function expectedEvents(root = ROOT) {
 export function checkNode(version = process.versions.node) {
   const major = Number(version.split('.')[0])
   if (major >= MIN_NODE_MAJOR) return result(PASS, `node v${version}`)
-  return result(FAIL, `node v${version} — the server (better-sqlite3) needs Node ${MIN_NODE_MAJOR}+; install a current LTS`)
+  return result(FAIL, `node v${version} — Antigravity Office needs Node ${MIN_NODE_MAJOR}+; install a current LTS`)
 }
 
-/**
- * What settings.json says about our hooks: per event, the entries whose
- * command names agent-tracker.sh, with the path each runs and whether it exists.
- */
-export function inspectHooks(settings, { events, tracker, home }) {
-  const hooks = settings && typeof settings === 'object' && settings.hooks && typeof settings.hooks === 'object' ? settings.hooks : {}
+/** Inspect ~/.gemini/config/hooks.json for our antigravity-office block. */
+export function inspectHooks(cfg, { events, relay, home }) {
+  const block = cfg && typeof cfg === 'object' ? (cfg[AGY_KEY] ?? cfg['claude-office']) : null
   const perEvent = new Map()
   for (const event of events) {
-    const groups = Array.isArray(hooks[event]) ? hooks[event] : hooks[event] && typeof hooks[event] === 'object' ? [hooks[event]] : []
+    const raw = block && typeof block === 'object' ? block[event] : null
+    const list = Array.isArray(raw) ? raw : []
     const entries = []
-    for (const group of groups) {
-      if (!group || typeof group !== 'object' || !Array.isArray(group.hooks)) continue
-      for (const h of group.hooks) {
-        const raw = h && typeof h === 'object' ? scriptPathIn(h.command, TRACKER_NAME) : null
-        if (raw === null) continue
-        const path = expandHome(raw, home)
-        entries.push({ command: h.command, path, exists: existsSync(path), current: existsSync(path) && samePath(path, tracker) })
+    for (const item of list) {
+      const handlers = Array.isArray(item?.hooks) ? item.hooks : [item]
+      for (const h of handlers) {
+        const script = h && typeof h === 'object' ? scriptPathIn(h.command, RELAY_NAME) : null
+        if (script === null) continue
+        const path = expandHome(script, home)
+        entries.push({ command: h.command, path, exists: existsSync(path), current: existsSync(path) && samePath(path, relay) })
       }
     }
     perEvent.set(event, entries)
   }
   const registered = events.filter(e => perEvent.get(e).length > 0)
   const missing = events.filter(e => perEvent.get(e).length === 0)
-  const duplicated = events.filter(e => perEvent.get(e).length > 1)
   const all = events.flatMap(e => perEvent.get(e))
   const dead = [...new Set(all.filter(x => !x.exists).map(x => x.path))]
   const foreign = [...new Set(all.filter(x => x.exists && !x.current).map(x => x.path))]
   const paths = [...new Set(all.map(x => x.path))]
-  return { perEvent, registered, missing, duplicated, dead, foreign, paths, any: registered.length > 0 }
+  return { perEvent, registered, missing, dead, foreign, paths, any: registered.length > 0 }
 }
 
-/**
- * Is the agent-office plugin installed? Enabled in settings.json
- * (`enabledPlugins["agent-office@<marketplace>"]`) and present on disk: the
- * installPath from plugins/installed_plugins.json, a version under
- * plugins/cache/<marketplace>/agent-office/, or the marketplace clone under
- * plugins/marketplaces/ (this repository is its own marketplace).
- */
-export function inspectPlugin(settings, configDir) {
-  const enabledPlugins = settings && typeof settings === 'object' && settings.enabledPlugins && typeof settings.enabledPlugins === 'object' ? settings.enabledPlugins : {}
-  const enabledKey = Object.keys(enabledPlugins).find(k => (k === PLUGIN_NAME || k.startsWith(`${PLUGIN_NAME}@`)) && enabledPlugins[k]) ?? null
-  const disabledKey = enabledKey ? null : Object.keys(enabledPlugins).find(k => k === PLUGIN_NAME || k.startsWith(`${PLUGIN_NAME}@`)) ?? null
-
-  const copies = []
-  const consider = (dir, source) => {
-    const tracker = join(dir, 'hooks', TRACKER_NAME)
-    if (existsSync(tracker)) copies.push({ dir, tracker, source })
-  }
-  const pluginsDir = join(configDir, 'plugins')
-
-  const installed = readJson(join(pluginsDir, 'installed_plugins.json')).value
-  const entries = installed && typeof installed === 'object' && installed.plugins && typeof installed.plugins === 'object' ? installed.plugins : {}
-  for (const [key, val] of Object.entries(entries)) {
-    if (!(key === PLUGIN_NAME || key.startsWith(`${PLUGIN_NAME}@`))) continue
-    for (const rec of Array.isArray(val) ? val : [val]) {
-      if (rec && typeof rec === 'object' && typeof rec.installPath === 'string') consider(rec.installPath, 'installed_plugins.json')
-    }
-  }
-
-  const cache = join(pluginsDir, 'cache')
-  if (existsSync(cache)) {
-    for (const marketplace of safeReaddir(cache)) {
-      const pluginDir = join(cache, marketplace, PLUGIN_NAME)
-      if (!existsSync(pluginDir)) continue
-      for (const version of safeReaddir(pluginDir)) consider(join(pluginDir, version), `plugins/cache/${marketplace}/${PLUGIN_NAME}/${version}`)
-    }
-  }
-
-  const marketplaces = join(pluginsDir, 'marketplaces')
-  if (existsSync(marketplaces)) {
-    for (const name of safeReaddir(marketplaces)) {
-      const dir = join(marketplaces, name)
-      const manifest = readJson(join(dir, '.claude-plugin', 'plugin.json')).value
-      if (manifest?.name === PLUGIN_NAME) consider(dir, `plugins/marketplaces/${name}`)
-    }
-  }
-
-  return { enabledKey, disabledKey, copies, found: !!enabledKey && copies.length > 0 }
-}
-
-function safeReaddir(dir) {
-  try {
-    return readdirSync(dir)
-  } catch {
-    return []
-  }
-}
-
-/** The hook lines: settings.json hooks and/or the plugin. */
-export function checkHooks({ settingsPath, settings, settingsState, events, tracker, home, configDir, fallback, commands: C = COMMANDS }) {
+export function checkHooks({ hooksPath, config, configState, events, relay, home, commands: C = COMMANDS }) {
   const out = []
-  const hooks = inspectHooks(settings, { events, tracker, home })
-  const plugin = inspectPlugin(settings, configDir)
+  const hooks = inspectHooks(config, { events, relay, home })
   const n = events.length
 
-  if (settingsState?.error) out.push(result(FAIL, `settings: ${settingsPath} is not valid JSON (${settingsState.error}) — Claude Code ignores it; fix it, then ${C.install}`))
+  if (configState?.error) {
+    out.push(result(FAIL, `hooks config: ${hooksPath} is not valid JSON (${configState.error}) — fix it, then ${C.install}`))
+    return { results: out, hooks }
+  }
 
   if (hooks.any) {
     const where = hooks.paths.length === 1 ? hooks.paths[0] : `${hooks.paths.length} different paths`
     if (hooks.dead.length) {
-      out.push(result(FAIL, `hooks: ${n - hooks.missing.length}/${n} events registered in ${settingsPath}, but they run a file that does not exist: ${hooks.dead.join(', ')}`,
-        `Claude Code reports a hook error on every tool call and the office hears nothing — ${C.install} repoints them at this checkout`))
+      out.push(result(FAIL, `hooks: ${n - hooks.missing.length}/${n} events registered in ${hooksPath}, but they run a file that does not exist: ${hooks.dead.join(', ')}`,
+        `${C.install} repoints them at this checkout`))
     } else if (hooks.missing.length) {
       out.push(result(WARN, `hooks: ${hooks.registered.length}/${n} events run ${where} (missing: ${hooks.missing.join(', ')})`,
-        `an older install — ${C.install} adds the rest`))
+        `an older install — ${C.install} updates them`))
     } else {
       out.push(result(PASS, `hooks: ${n}/${n} events run ${where}`))
     }
     if (hooks.foreign.length) {
-      out.push(result(WARN, `hooks: ${hooks.foreign.join(', ')} is not this checkout's hooks/${TRACKER_NAME} (${tracker})`,
-        `fine if that clone is the one you mean to use; ${C.install} here repoints them`))
+      out.push(result(WARN, `hooks: ${hooks.foreign.join(', ')} is not this checkout's hooks/${RELAY_NAME} (${relay})`,
+        `fine if that copy is the one you mean to use; ${C.install} here repoints them`))
     }
-    if (hooks.duplicated.length) {
-      out.push(result(WARN, `hooks: registered twice for ${hooks.duplicated.join(', ')} — every agent arrives twice`,
-        `${C.install} drops the duplicate`))
-    }
+  } else {
+    const what = configState?.missing ? `${hooksPath} does not exist` : `nothing in ${hooksPath} runs hooks/${RELAY_NAME}`
+    out.push(result(FAIL, `hooks: not installed — ${what}`, `${C.install} registers them`))
   }
 
-  if (plugin.found) {
-    const copy = plugin.copies[0]
-    if (hooks.any) {
-      out.push(result(WARN, `plugin ${plugin.enabledKey} is installed as well (${copy.source}) — plugin hooks merge with the settings hooks, so every agent arrives twice`,
-        `keep one: ${C.uninstallHooks} takes the installer's hooks out and keeps the status line (the meters), or ${C.unplugin}`))
-    } else {
-      out.push(result(PASS, `plugin ${plugin.enabledKey}: enabled, hooks run ${copy.tracker}`))
-    }
-  } else if (plugin.enabledKey) {
-    out.push(result(hooks.any ? WARN : FAIL, `plugin ${plugin.enabledKey} is enabled in ${settingsPath} but no installed copy was found under ${join(configDir, 'plugins')}`,
-      `${C.plugin}`))
-  } else if (!hooks.any) {
-    const notes = [
-      plugin.disabledKey ? `the plugin ${plugin.disabledKey} is installed but disabled: claude plugin enable ${plugin.disabledKey}` : null,
-      !plugin.disabledKey && plugin.copies.length ? `a plugin copy exists at ${plugin.copies[0].dir} but is not enabled: ${C.plugin}` : null,
-      fallback?.any ? `they are in ${fallback.path} — but CLAUDE_CONFIG_DIR is set, so Claude Code reads ${settingsPath}; ${C.install} with CLAUDE_CONFIG_DIR set writes them there (CLAUDE_CONFIG_DIR= ${C.uninstall} takes the old ones out)` : null,
-      `${C.install} registers them (or install the plugin: ${C.plugin})`,
-    ]
-    const what = settingsState?.missing ? `${settingsPath} does not exist` : `nothing in ${settingsPath} runs hooks/${TRACKER_NAME}`
-    out.push(result(FAIL, `hooks: not installed — ${what}, and no agent-office plugin is enabled`, ...notes))
-  }
-
-  return { results: out, hooks, plugin }
+  return { results: out, hooks }
 }
 
-/** The status line: statusLine + subagentStatusLine running hooks/status-line.sh. */
-export function checkStatusLine({ settings, statusScript, home, pluginOnly, commands: C = COMMANDS }) {
-  const s = settings && typeof settings === 'object' ? settings : {}
-  // Next to the plugin the full installer would register every hook a second time
-  const fix = pluginOnly ? C.statusLine : C.install
-  const entry = (key) => {
-    const cur = s[key]
-    const raw = cur && typeof cur === 'object' ? scriptPathIn(cur.command, STATUS_NAME) : null
-    if (raw === null) return { ours: false, other: cur && typeof cur === 'object' && typeof cur.command === 'string' ? cur.command : null }
-    const path = expandHome(raw, home)
-    return { ours: true, path, exists: existsSync(path), current: existsSync(path) && samePath(path, statusScript) }
-  }
-  const main = entry('statusLine')
-  const sub = entry('subagentStatusLine')
-
-  if (main.ours && !main.exists) {
-    return result(FAIL, `status line: statusLine runs ${main.path}, which does not exist — Claude Code shows an error instead of a status line`, `${fix} repoints it`)
-  }
-  if (main.ours) {
-    const notes = [
-      !sub.ours ? `subagentStatusLine is not registered (subagent token rows) — ${fix} adds it` : null,
-      !main.current ? `(not this checkout's hooks/${STATUS_NAME}: ${main.path})` : null,
-    ]
-    return result(sub.ours ? PASS : WARN, `status line: statusLine${sub.ours ? ' + subagentStatusLine' : ''} run ${main.path}`, ...notes)
-  }
-  if (pluginOnly) {
-    return result(WARN, 'status line: not registered — a plugin cannot set statusLine, so the payroll / electricity / memory meters stay hidden',
-      `${C.statusLine} from a clone adds it and nothing else (the hooks stay with the plugin; ${C.install} would register them a second time)`)
-  }
-  return result(WARN, 'status line: not registered — the payroll / electricity / memory meters stay hidden',
-    main.other ? `${C.install} adds it and chains the one you have (${main.other})` : `${C.install} adds it`)
+export function checkAgy(path = process.env.PATH) {
+  const found = which('agy', path)
+  if (found) return result(PASS, `agy: ${found}`)
+  return result(WARN, 'agy: not on PATH — visual office works fine, only optional chat-watcher AI replies need `agy`')
 }
 
-export function checkTools(names = ['python3', 'bash', 'curl'], path = process.env.PATH) {
-  const why = { python3: 'the hook parses every event with it, and the installer merges settings.json with it', bash: 'every hook command is `bash .../agent-tracker.sh`', curl: 'the hook POSTs to the server with it' }
-  return names.map(name => {
-    const found = which(name, path)
-    return found ? result(PASS, `${name}: ${found}`) : result(FAIL, `${name}: not on PATH — ${why[name] ?? 'needed'}`)
-  })
-}
-
-/**
- * Other AI tools (scripts/install-tool-hooks.mjs): one line naming each tool
- * that is installed and whether the office is connected to it. Information
- * only — a tool someone doesn't use is never a problem — so it is a PASS, and
- * nothing at all when none of them is installed.
- * @returns {object | null} a result, or null
- */
-export function checkOtherTools({ home, commands: C = COMMANDS }) {
-  const found = TOOL_IDS.map(id => ({ id, state: toolStatus(id, { home }) })).filter(t => t.state !== 'not-installed')
-  if (!found.length) return null
-  const title = `other AI tools: ${found.map(t => `${toolLabel(t.id)} ${t.state === 'connected' ? 'connected' : 'not connected'}`).join(', ')}`
-  const missing = found.filter(t => t.state !== 'connected')
-  return result(PASS, title, missing.length ? `connect one: ${C.install}${C.install.startsWith('npm run') ? ' --' : ''} --tool <${missing.map(t => t.id).join('|')}>` : null)
-}
-
-/** GET /health: is the server up, has it seen hooks. */
 export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.fetch, timeoutMs = 2000, now = Date.now(), commands: C = COMMANDS } = {}) {
   const url = `http://127.0.0.1:${port}/health`
   let body
@@ -406,14 +241,14 @@ export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.
   const version = body.version ? `v${body.version}` : '(version unknown — older server)'
   const up = typeof body.uptimeMs === 'number' ? `, up ${formatSpan(body.uptimeMs)}` : ''
   out.push(result(PASS, `server: ${version}${up} on :${port} — ${body.sessions ?? '?'} session(s), ${body.agents ?? 0} agent(s), ${body.clients ?? 0} office window(s) connected`,
-    body.clients === 0 ? `no office window is connected: ${C.open} opens it with the office token (or the link the server printed${C.dev ? `; ${C.open} -- --dev for Vite on :3333 under ${C.dev}` : ''})` : null))
+    body.clients === 0 ? `no office window is connected: ${C.open} opens it with the office token` : null))
   if (typeof body.hooksSeen !== 'number') {
-    out.push(result(WARN, 'server: this server predates hook counting — restart it from this checkout to see whether hooks arrive'))
+    out.push(result(WARN, 'server: this server predates hook counting — restart it from this checkout'))
   } else if (body.hooksSeen > 0) {
     out.push(result(PASS, `hooks reaching the server: ${body.hooksSeen} since it started, last ${formatSpan(now - body.lastHookAt)} ago`))
   } else {
     out.push(result(WARN, `hooks reaching the server: none since it started${up ? ` (${formatSpan(body.uptimeMs)} ago)` : ''}`,
-      'run a tool in Claude Code and re-check; if nothing arrives, see the hooks line above'))
+      'run a tool in Antigravity and re-check; if nothing arrives, see the hooks line above'))
   }
   if (body.uiAvailable === false) {
     out.push(result(WARN, `server: UI not built — http://127.0.0.1:${port}/ is a 404; ${C.start} serves it there${C.dev ? `, or ${C.dev} for Vite on :3333` : ''}`))
@@ -428,6 +263,7 @@ export function checkToken({ officeHome, serverUp }) {
       ? result(FAIL, `token: ${file} is missing although the server is up — hooks cannot authenticate`, 'is the server running with another AGENT_OFFICE_HOME? set the same one for the hook, or restart it from here')
       : result(WARN, `token: ${file} not written yet — the server writes it when it starts`)
   }
+  if (process.platform === 'win32') return result(PASS, `token: ${file}`)
   let mode
   try {
     mode = statSync(file).mode & 0o777
@@ -446,105 +282,57 @@ export function checkDist({ root, port = DEFAULT_PORT, commands: C = COMMANDS })
   return result(WARN, `dist/: not built — ${C.distMissing}`)
 }
 
-// Why these: the files bash or python3 runs straight from the checkout (the
-// hook, its Python, the installer, the status line, the start/stop scripts).
-// A CR in any of them is a `$'\r': command not found` the user never sees.
-const LF_FILES = ['hooks/agent-tracker.sh', 'hooks/agent-tracker.py', 'hooks/install-hooks.sh', 'hooks/status-line.sh', 'scripts/start-office.sh', 'scripts/stop-office.sh']
-
-/**
- * The hook's own files in `root`: agent-tracker.py present, and LF_FILES free
- * of CRLF. Returns one result line.
- */
 export function checkHookFiles({ root, hooksDir = join(root, 'hooks'), commands: C = COMMANDS }) {
-  if (!existsSync(join(hooksDir, 'agent-tracker.py'))) {
-    return result(FAIL, `hook files: ${join(hooksDir, 'agent-tracker.py')} is missing — agent-tracker.sh runs it, so every event is dropped`, C.restoreHooks)
+  const relay = join(hooksDir, RELAY_NAME)
+  if (!existsSync(relay)) {
+    return result(FAIL, `hook files: ${relay} is missing — Antigravity hooks cannot deliver events`, C.restoreHooks)
   }
-  const crlf = LF_FILES.filter(f => {
-    try {
-      // Why: the hooks/ files are read where Claude Code runs them, which is a
-      // copy outside the package for an npx install (cli/agent-office.mjs)
-      return readFileSync(f.startsWith('hooks/') ? join(hooksDir, f.slice('hooks/'.length)) : join(root, f), 'latin1').includes('\r')
-    } catch {
-      return false
-    }
-  })
-  if (crlf.length) {
-    // Why delete then check out: git leaves an unchanged file alone, so only a
-    // fresh checkout applies .gitattributes' eol=lf; touching just these files
-    // keeps the user's other work
-    const files = crlf.map(f => `"${f}"`).join(' ')
-    return result(FAIL, `hook files: CRLF line endings in ${crlf.join(', ')} — bash cannot run them`, `cd "${root}" && rm ${files} && git checkout -- ${files}`)
-  }
-  return result(PASS, 'hook files: agent-tracker.py present, LF line endings')
+  return result(PASS, `hook files: ${RELAY_NAME} present`)
 }
 
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
 
-/**
- * Run every check. Options override the environment (tests): home, configDir,
- * officeHome, port, root, path, fetchImpl, nodeVersion. `hooksDir` is where
- * the hook scripts Claude Code should run live (default <root>/hooks; the npx
- * CLI's stable copy otherwise) and `commands` the fix commands to name
- * (default COMMANDS).
- */
 export async function runDoctor(opts = {}) {
   const env = opts.env ?? process.env
-  const home = opts.home ?? env.HOME ?? homedir()
-  const defaultConfigDir = join(home, '.claude')
-  const configDir = opts.configDir ?? (env.CLAUDE_CONFIG_DIR ? resolve(env.CLAUDE_CONFIG_DIR) : defaultConfigDir)
+  const home = opts.home ?? env.HOME ?? env.USERPROFILE ?? homedir()
   const officeHome = opts.officeHome ?? env.AGENT_OFFICE_HOME ?? join(home, '.agent-office')
   const port = Number(opts.port ?? env.AGENT_OFFICE_PORT) || DEFAULT_PORT
   const root = opts.root ?? ROOT
   const hooksDir = opts.hooksDir ?? join(root, 'hooks')
   const commands = opts.commands ?? COMMANDS
-  const tracker = join(hooksDir, TRACKER_NAME)
-  const statusScript = join(hooksDir, STATUS_NAME)
-  const settingsPath = join(configDir, 'settings.json')
+  const relay = join(hooksDir, RELAY_NAME)
+  const hooksPath = opts.hooksPath ?? targetFile('antigravity', home)
   const events = expectedEvents(root)
 
-  const settingsState = readJson(settingsPath)
-  const settings = settingsState.value ?? {}
-
-  // CLAUDE_CONFIG_DIR set: an installer from before it honoured the variable wrote ~/.claude/settings.json, so look there too
-  let fallback = null
-  if (!samePath(configDir, defaultConfigDir)) {
-    const alt = readJson(join(defaultConfigDir, 'settings.json')).value
-    if (alt) fallback = { path: join(defaultConfigDir, 'settings.json'), ...inspectHooks(alt, { events, tracker, home }) }
-  }
+  const configState = readJson(hooksPath)
+  const config = configState.value ?? {}
 
   const results = []
   results.push(checkNode(opts.nodeVersion))
-  const hooks = checkHooks({ settingsPath, settings, settingsState, events, tracker, home, configDir, fallback, commands })
+  const hooks = checkHooks({ hooksPath, config, configState, events, relay, home, commands })
   results.push(...hooks.results)
-  results.push(checkStatusLine({ settings, statusScript, home, pluginOnly: hooks.plugin.found && !hooks.hooks.any, commands }))
-  results.push(...checkTools(undefined, opts.path ?? env.PATH))
-  const others = checkOtherTools({ home, commands })
-  if (others) results.push(others)
+  results.push(checkAgy(opts.path ?? env.PATH))
   const server = await checkServer({ port, fetchImpl: opts.fetchImpl, timeoutMs: opts.timeoutMs, commands })
   results.push(...server.results)
   results.push(checkToken({ officeHome, serverUp: server.up }))
   results.push(checkDist({ root, port, commands }))
-  // Why the fallback: before the npx CLI's first install-hooks there is no
-  // copy yet; the package's own hooks/ are what that install will copy, and
-  // the hooks line above already says nothing is installed
   results.push(checkHookFiles({ root, hooksDir: existsSync(hooksDir) ? hooksDir : join(root, 'hooks'), commands }))
 
   return {
     results,
     ok: !results.some(r => r.level === FAIL),
-    context: { home, configDir, settingsPath, officeHome, port, root, tracker, events, commands },
+    context: { home, hooksPath, officeHome, port, root, relay, events, commands },
   }
 }
 
 const ANSI = { [PASS]: '\x1b[32m', [WARN]: '\x1b[33m', [FAIL]: '\x1b[31m', dim: '\x1b[2m', bold: '\x1b[1m', reset: '\x1b[0m' }
 
-/** The report as lines; colour only when asked. */
 export function formatReport({ results, ok, context }, { color = false } = {}) {
   const C = context.commands ?? COMMANDS
   const c = (code, text) => (color ? `${ANSI[code]}${text}${ANSI.reset}` : text)
-  const lines = [c('bold', 'Agent Office doctor'), c('dim', `  ${context.root}  ·  settings ${context.settingsPath}  ·  port ${context.port}`), '']
+  const lines = [c('bold', 'Antigravity Office doctor'), c('dim', `  ${context.root}  ·  hooks ${context.hooksPath}  ·  port ${context.port}`), '']
   for (const r of results) {
     lines.push(`  ${c(r.level, r.level)}  ${r.title}`)
     for (const note of r.notes) lines.push(`        ${c('dim', note)}`)
@@ -554,20 +342,16 @@ export function formatReport({ results, ok, context }, { color = false } = {}) {
   lines.push('')
   lines.push(`  ${counts[PASS]} passed, ${counts[WARN]} warning(s), ${counts[FAIL]} failed${ok ? '' : c(FAIL, ' — fix the FAIL lines above')}`)
   lines.push('')
-  // Why: the npm-run commands only work from inside the checkout; the npx set works anywhere
   lines.push(c('bold', 'Commands') + c('dim', C === COMMANDS ? `  (from ${context.root})` : ''))
   const rows = [
-    ['install / repair hooks + status line', C.install],
-    ['hooks only', C.hooksOnly],
-    ['status line only (next to the plugin)', C.statusLine],
-    ['uninstall what the installer added', C.uninstall],
-    ['plugin instead of the installer', C.plugin],
-    ['uninstall the plugin', C.unplugin],
+    ['install / repair Antigravity hooks', C.install],
+    ['uninstall hooks', C.uninstall],
     ['start the office', `${C.start}    # or: ${C.startAlt}`],
+    ['optional chat AI replies', C.chatWatcher],
   ]
   const width = Math.max(...rows.map(([k]) => k.length))
   for (const [k, v] of rows) lines.push(`  ${k.padEnd(width)}  ${v}`)
-  lines.push(c('dim', '  honours AGENT_OFFICE_PORT, AGENT_OFFICE_HOME, CLAUDE_CONFIG_DIR; --json for machine-readable output'))
+  lines.push(c('dim', '  honours AGENT_OFFICE_PORT, AGENT_OFFICE_HOME; --json for machine-readable output'))
   return lines
 }
 
@@ -582,7 +366,7 @@ function isMainModule() {
 if (isMainModule()) {
   const args = new Set(process.argv.slice(2))
   if (args.has('-h') || args.has('--help')) {
-    console.log('Usage: npm run doctor [-- --json] [--no-color]\n  Checks node, hooks (or the plugin), the status line, python3/bash/curl, the server, the auth token and the build; exit 1 on any FAIL.')
+    console.log('Usage: npm run doctor [-- --json] [--no-color]\n  Checks node, Antigravity hooks, agy CLI, the server, the auth token and the build; exit 1 on any FAIL.')
     process.exit(0)
   }
   const report = await runDoctor()

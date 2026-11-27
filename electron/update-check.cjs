@@ -40,8 +40,8 @@ const https = require('https')
 const path = require('path')
 
 // The one endpoint read, and the only page the menu item may open
-const RELEASES_API_URL = 'https://api.github.com/repos/W17ant/Claude-Office/releases/latest'
-const RELEASE_PAGE_PREFIX = 'https://github.com/W17ant/Claude-Office/releases/'
+const RELEASES_API_URL = 'https://api.github.com/repos/ammarsufyan/Antigravity-Office/releases/latest'
+const RELEASE_PAGE_PREFIX = 'https://github.com/ammarsufyan/Antigravity-Office/releases/'
 
 // Why: six hours. Releases come out every few weeks, so checking more often
 // buys nothing, and GitHub allows 60 unauthenticated requests an hour per IP,
@@ -128,7 +128,7 @@ function normaliseTag(value) {
 
 /**
  * The release page to open, from the API's `html_url`: only an https URL on
- * github.com under /W17ant/Claude-Office/releases/, checked both as given and
+ * github.com under /ammarsufyan/Antigravity-Office/releases/, checked both as given and
  * after URL normalisation (so `releases/../../other` cannot climb out), with
  * no credentials, port, query or fragment. null for anything else.
  * @param {unknown} htmlUrl

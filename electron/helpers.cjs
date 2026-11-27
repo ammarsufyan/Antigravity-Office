@@ -652,7 +652,7 @@ function opensInBrowser(url) {
   try {
     const u = new URL(url)
     return u.protocol === 'https:' && u.host === 'github.com'
-      && u.pathname === '/W17ant/Claude-Office/issues/new'
+      && u.pathname === '/ammarsufyan/Antigravity-Office/issues/new'
       && u.searchParams.get('template') === 'translation.yml'
   } catch {
     return false

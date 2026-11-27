@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Not sure yet, or want votes first? Start it in [Discussions › Ideas](https://github.com/W17ant/Claude-Office/discussions/categories/ideas).
-        Features that reflect something the AI tool really does (a hook event, a status-line field, a state) come first; see CONTRIBUTING.md.
+        Not sure yet, or want votes first? Start it in [Discussions › Ideas](https://github.com/ammarsufyan/Antigravity-Office/discussions/categories/ideas).
+        Features that reflect something Antigravity really does (a hook event, a transcript metric, a state) come first; see CONTRIBUTING.md.
   - type: textarea
     id: what
     attributes:
@@ -25,25 +25,22 @@ body:
     attributes:
       label: How you run the office
       options:
-        - npx @w17ant/agent-office
+        - npx antigravity-office
         - Desktop app
         - From a checkout (npm run …)
-        - Claude Code plugin
+        - Antigravity plugin
   - type: dropdown
     id: ai-tool
     attributes:
       label: Which AI tool
       options:
-        - Claude Code
-        - Codex
-        - Gemini CLI
-        - OpenCode
+        - Antigravity
         - Other
   - type: input
     id: fork
     attributes:
       label: Built it in a fork already? Link it
-      placeholder: https://github.com/you/Claude-Office/tree/your-branch
+      placeholder: https://github.com/you/Antigravity-Office/tree/your-branch
   - type: checkboxes
     id: build
     attributes:

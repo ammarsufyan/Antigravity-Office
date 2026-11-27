@@ -120,13 +120,13 @@ describe('asset names and URLs', () => {
   })
 
   it('an asset URL is under the release for that tag, and a name cannot climb out of it', () => {
-    expect(p.releaseAssetUrl('1.2.0', 'latest-mac.yml')).toBe('https://github.com/W17ant/Claude-Office/releases/download/v1.2.0/latest-mac.yml')
-    expect(p.releaseAssetUrl('v1.2.0', 'Agent-Office-1.2.0-mac-arm64.zip')).toBe('https://github.com/W17ant/Claude-Office/releases/download/v1.2.0/Agent-Office-1.2.0-mac-arm64.zip')
+    expect(p.releaseAssetUrl('1.2.0', 'latest-mac.yml')).toBe('https://github.com/ammarsufyan/Antigravity-Office/releases/download/v1.2.0/latest-mac.yml')
+    expect(p.releaseAssetUrl('v1.2.0', 'Agent-Office-1.2.0-mac-arm64.zip')).toBe('https://github.com/ammarsufyan/Antigravity-Office/releases/download/v1.2.0/Agent-Office-1.2.0-mac-arm64.zip')
     for (const name of ['../../other/file.zip', 'a/b.zip', 'x.zip?token=1', '', '.hidden', 'a b.zip']) {
       expect(p.releaseAssetUrl('1.2.0', name)).toBeNull()
     }
     expect(p.releaseAssetUrl('nightly', 'latest-mac.yml')).toBeNull()
-    expect(pkg.repository.url).toContain('github.com/W17ant/Claude-Office')
+    expect(pkg.repository.url).toContain('github.com/ammarsufyan/Antigravity-Office')
   })
 
   it('the bundle id is the one the app is built with', () => {
@@ -136,14 +136,14 @@ describe('asset names and URLs', () => {
 
 describe('isAllowedDownloadUrl: https to GitHub and its asset hosts, nothing else', () => {
   it('allows github.com and the two hosts a release asset redirects to', () => {
-    expect(p.isAllowedDownloadUrl('https://github.com/W17ant/Claude-Office/releases/download/v1.2.0/latest-mac.yml')).toBe(true)
+    expect(p.isAllowedDownloadUrl('https://github.com/ammarsufyan/Antigravity-Office/releases/download/v1.2.0/latest-mac.yml')).toBe(true)
     expect(p.isAllowedDownloadUrl('https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sp=r&sig=abc')).toBe(true)
     expect(p.isAllowedDownloadUrl('https://objects.githubusercontent.com/github-production-release-asset-2e65be/1/2?X-Amz-Signature=abc')).toBe(true)
   })
 
   it('refuses http, other hosts, look-alike hosts, ports, credentials and junk', () => {
     for (const url of [
-      'http://github.com/W17ant/Claude-Office/releases/download/v1.2.0/latest-mac.yml',
+      'http://github.com/ammarsufyan/Antigravity-Office/releases/download/v1.2.0/latest-mac.yml',
       'https://example.com/Agent-Office-1.2.0-mac-arm64.zip',
       'https://github.com.evil.example/a.zip',
       'https://evilgithub.com/a.zip',
@@ -230,7 +230,7 @@ describe('chooseMacAsset: the one zip for this version and architecture', () => 
   it('picks the zip for the architecture, with its URL, checksum and size', () => {
     expect(p.chooseMacAsset(feed(), { version: 'v1.2.0', arch: 'arm64' })).toEqual({
       name: 'Agent-Office-1.2.0-mac-arm64.zip',
-      url: 'https://github.com/W17ant/Claude-Office/releases/download/v1.2.0/Agent-Office-1.2.0-mac-arm64.zip',
+      url: 'https://github.com/ammarsufyan/Antigravity-Office/releases/download/v1.2.0/Agent-Office-1.2.0-mac-arm64.zip',
       sha512: ARM_SHA,
       size: 155311142,
     })

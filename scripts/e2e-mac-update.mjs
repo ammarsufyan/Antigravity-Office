@@ -274,7 +274,7 @@ async function main() {
     userData,
     feedPort,
     tag,
-    releasePage: `https://github.com/W17ant/Claude-Office/releases/tag/${tag}`,
+    releasePage: `https://github.com/ammarsufyan/Antigravity-Office/releases/tag/${tag}`,
     restartLabel: restartMenuLabel(tag),
   }))
   writeFileSync(appPackage, JSON.stringify({ ...appPkg, main: 'electron/e2e-entry.cjs' }, null, 2))

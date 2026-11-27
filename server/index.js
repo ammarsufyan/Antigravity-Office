@@ -33,7 +33,6 @@ import { dirname } from 'path'
 import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from './chat-db.js'
 import db from './chat-db.js'
 import { mountStatus } from './status.js'
-import { mountRegistry } from './sessions.js'
 import { mountTasks } from './tasks.js'
 import { mountPermissions, sanitiseSuggestions, redactPermission } from './permissions.js'
 import { createPermissionNotifier } from './permission-notify.js'
@@ -564,8 +563,8 @@ const VERSION = readVersion()
 // ---------------------------------------------------------------------------
 
 /**
- * Read ~/.claude/settings.json and any .claude.json in cwd to discover
- * configured MCP servers. Returns an array of server-name strings.
+ * Read Antigravity MCP config files to discover configured MCP servers.
+ * Returns an array of server-name strings.
  */
 function discoverMcpServers() {
   const servers = new Set()
@@ -574,9 +573,6 @@ function discoverMcpServers() {
     join(homedir(), '.gemini', 'antigravity', 'mcp_config.json'),
     join(homedir(), '.gemini', 'config', 'mcp_config.json'),
     join(process.cwd(), '.agents', 'mcp_config.json'),
-    join(homedir(), '.claude', 'settings.json'),
-    join(homedir(), '.claude.json'),
-    join(process.cwd(), '.claude.json'),
   ]
 
   for (const filePath of candidates) {
@@ -734,17 +730,11 @@ function toolFromStatus(status) {
 /** @type {Map<string, object>} sessionId -> session record */
 const sessions = new Map()
 
-// Claude Code's config dir (CLAUDE_CONFIG_DIR moves it) holds the registry;
-// tests point AGENT_OFFICE_REGISTRY_DIR at a temp dir
-const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
-const REGISTRY_DIR = process.env.AGENT_OFFICE_REGISTRY_DIR || join(CLAUDE_DIR, 'sessions')
-// ...and each session's task list (server/tasks.js); tests point
-// AGENT_OFFICE_TASKS_DIR at a temp dir
-const TASKS_DIR = process.env.AGENT_OFFICE_TASKS_DIR || join(CLAUDE_DIR, 'tasks')
-// ...and each agent team's config (members, lead session), whose shared task
-// list lives under TASKS_DIR/<team name>; tests point AGENT_OFFICE_TEAMS_DIR
-// at a temp dir
-const TEAMS_DIR = process.env.AGENT_OFFICE_TEAMS_DIR || join(CLAUDE_DIR, 'teams')
+// Each session's file-backed task list (server/tasks.js); tests point
+// AGENT_OFFICE_TASKS_DIR / AGENT_OFFICE_TEAMS_DIR at a temp dir.
+// Antigravity sessions also sync tasks in memory via update_steps.
+const TASKS_DIR = process.env.AGENT_OFFICE_TASKS_DIR || join(RUNTIME_DIR, 'tasks')
+const TEAMS_DIR = process.env.AGENT_OFFICE_TEAMS_DIR || join(RUNTIME_DIR, 'teams')
 
 /** @type {Map<string, ReturnType<typeof setTimeout>>} sessionId -> timer that forgets an ended session */
 const sessionTimers = new Map()
@@ -1956,43 +1946,9 @@ function releasePermissions(sessionId, reason, filter) {
 // is exactly the picture the doctor needs when the hooks are not installed.
 const health = mountHealth(app, { broadcast, uiAvailable: UI_AVAILABLE, prove: challenge => officeProof(AUTH_TOKEN, challenge), counts: () => ({ agents: activeAgents.size, clients: wss?.clients.size ?? 0, sessions: Array.from(sessions.values()).filter(s => s.state === 'active').length }) })
 
-// The registry roster (server/sessions.js): Claude Code's own session registry
-// adds the sessions nothing has hooks for, and ends them when their process
-// goes. Nothing is read until start() — importing the module stays side-effect
-// free and the tests point AGENT_OFFICE_REGISTRY_DIR at a temp dir.
-const registry = mountRegistry(app, {
-  sessions,
-  broadcast,
-  registryDir: REGISTRY_DIR,
-  toEvent: sessionEvent,
-  endSession,
-  forgetSession,
-  onStatusChange: registryStatusChanged,
-})
-
-/**
- * A hooked session's registry entry left "waiting": the permission dialog
- * that was on screen is gone — answered Yes (busy), rejected with Esc (idle;
- * no hook fires for that at all), or the process exited. Whatever office card
- * was pending for it is released as answered in the terminal, so a late click
- * is a 409 and the hook's poll ends silently, and a permission hand comes
- * down with it — only cards and hands from before the dialog closed (the
- * entry's statusUpdatedAt), so the next dialog's request, already in, stays.
- * The one time the registry touches a hooked session's main state.
- */
-function registryStatusChanged(session, before, after, entry, t) {
-  if (before !== 'waiting' || after === 'waiting' || session.hooked === false || session.state !== 'active') return
-  const closedAt = entry?.statusUpdatedAt ?? t
-  const what = `the dialog closed in the terminal (registry: waiting -> ${after ?? 'gone'})`
-  releasePermissions(session.id, what, p => p.createdAt <= closedAt)
-  const lowered = lowerPermissionHand(session, w => w.since <= closedAt, what, after === 'busy' || after === 'shell' ? 'working' : 'idle')
-  if (lowered) broadcast({ ...lowered, reason: 'answered in the terminal' })
-}
-
-// The task board (server/tasks.js): each known session's task list, read from
-// ~/.claude/tasks/<session id>/ and broadcast as `task_board` when it changes.
+// The task board (server/tasks.js): each known session's task list, broadcast
+// as `task_board` when it changes (from Antigravity update_steps or TASKS_DIR).
 // GET /tasks is open; the task descriptions on it need the office token.
-// Started with the server, like the registry roster.
 const tasks = mountTasks(app, {
   sessions,
   broadcast,
@@ -4988,22 +4944,19 @@ export function start({ port = PORT, host = readHost() } = {}) {
     const pruneTimer = setInterval(() => promptQueue.prune(), 60_000)
     pruneTimer.unref?.()
     httpServer.once('close', () => clearInterval(pruneTimer))
-    // The registry roster runs with the server (and stops with it, so a
-    // test's closed server leaves no poll behind)
-    registry.start()
-    httpServer.once('close', () => { registry.stop(); removeAnswerMarker() })
-    // So does the task board's watch on the sessions' task lists
+    httpServer.once('close', () => removeAnswerMarker())
+    // Task board watch on file-backed task lists
     tasks.start()
     httpServer.once('close', () => tasks.stop())
     const bound = httpServer.address()?.port ?? port
     const mcpServers = discoverMcpServers()
     console.log(`
 ╔═══════════════════════════════════════════╗
-║         Agent Office Server v1.0          ║
+║      Antigravity Office Server v1.3       ║
 ╠═══════════════════════════════════════════╣
 ║  HTTP  http://127.0.0.1:${bound}              ║
 ║  WS    ws://127.0.0.1:${bound}/ws             ║
-║  POST  http://127.0.0.1:${bound}/event        ║
+║  POST  http://127.0.0.1:${bound}/hook/antigravity ║
 ║  GET   http://127.0.0.1:${bound}/roster       ║
 ║  GET   http://127.0.0.1:${bound}/agents       ║
 ║  GET   http://127.0.0.1:${bound}/sessions     ║
@@ -5011,7 +4964,6 @@ export function start({ port = PORT, host = readHost() } = {}) {
 ╚═══════════════════════════════════════════╝`)
 
     console.log(`  Auth token ${REUSED_TOKEN ? 'reused from' : 'written to'}: ${TOKEN_FILE}`)
-    console.log(`  Session registry read from: ${REGISTRY_DIR}`)
     console.log(`  Task lists read from: ${TASKS_DIR}`)
     if (UI_AVAILABLE) {
       console.log(`  Office UI served from: ${UI_DIR}`)
@@ -5022,7 +4974,7 @@ export function start({ port = PORT, host = readHost() } = {}) {
     if (mcpServers.length > 0) {
       console.log(`  MCP servers discovered: ${mcpServers.join(', ')}`)
     } else {
-      console.log('  No MCP servers found in ~/.claude/settings.json')
+      console.log('  No MCP servers found in Antigravity config')
     }
     console.log()
     // The office link. Only whoever started the server sees this output;
@@ -5108,8 +5060,6 @@ export {
   START_BIND_MS,
   FIRST_TOOL_BIND_MS,
   sessions,
-  registry,
-  REGISTRY_DIR,
   tasks,
   TASKS_DIR,
   TEAMS_DIR,

@@ -161,7 +161,7 @@ export function languageList(): LanguageInfo[] {
 
 // Why a GitHub issue form: a plain link, so the office itself sends nothing,
 // and the form lands with the language already filled in
-const REPORT_BASE = 'https://github.com/W17ant/Claude-Office/issues/new?template=translation.yml&language='
+const REPORT_BASE = 'https://github.com/ammarsufyan/Antigravity-Office/issues/new?template=translation.yml&language='
 
 /** The "Report a translation error" link for a language. */
 export function reportUrl(code: string): string {

@@ -53,9 +53,9 @@
         "readOnly": "Read-only page: it has no office token, so the server would refuse a change. Open the link from npm run open to change these.",
         "waiting": "The office server has not answered yet.",
         "answer": "Answer permissions here",
-        "answerTitle": "Permission dialogs can be answered from a card in the office while Claude waits",
+        "answerTitle": "Permission dialogs can be answered from a card in the office while Antigravity waits",
         "notify": "Notify on permission waits",
-        "notifyTitle": "A desktop notification when Claude starts waiting on a permission",
+        "notifyTitle": "A desktop notification when Antigravity starts waiting on a permission",
         "logging": "Prompt logging",
         "logOff": "Off",
         "logSummary": "Summary",
@@ -65,7 +65,7 @@
         "hintFull": "Prompts and replies up to 2000 characters.",
         "rowsStay": "Rows already in chat.db stay until",
         "ai": "AI chat monitor",
-        "aiTitle": "The chat watcher that lets Claude answer #office-general",
+        "aiTitle": "The chat watcher that lets Antigravity answer #office-general",
         "bossSprite": "Boss sprite:",
         "bossSpriteIn": "in",
         "bossSpriteWhen": "(read when the server starts).",
@@ -101,7 +101,7 @@
         "model": "model {model}",
         "effort": " · effort {effort}",
         "over200k": " · over 200k",
-        "claudeCode": " · Claude Code {version}",
+        "claudeCode": " · Antigravity {version}",
         "costLine": "{amount} · {duration} · session {id}",
         "rateHead": "RATE LIMITS (claude.ai subscription)",
         "rate5h": "5-hour window {percent}% used",
@@ -109,27 +109,27 @@
         "resets": " · resets {time}",
         "spendLimit": "spend limit {percent}% used"
       },
-      "clutter": "🗂️ Claude's desk is getting cluttered — {session} is at {percent}% context",
-      "clutterEstimated": "🗂️ Claude's desk is getting cluttered — {session} is at {percent}% context (estimated)",
+      "clutter": "🗂️ Antigravity's desk is getting cluttered — {session} is at {percent}% context",
+      "clutterEstimated": "🗂️ Antigravity's desk is getting cluttered — {session} is at {percent}% context (estimated)",
       "unnamedModel": "an unnamed model",
       "window": {
         "oneM": "window {size} tokens: the session runs the [1m] variant of {model}",
         "unknown": "window {size} tokens assumed: {model} is not in the office's model table, so the reading is approximate",
         "overflow": "window {size} tokens assumed: more than 200,000 are in use, so {model} must run its 1M variant (approximate)",
-        "table": "window {size} tokens for {model} (Claude Code's model table)"
+        "table": "window {size} tokens for {model} (model table)"
       },
       "estimate": {
         "estSuffix": " · est.",
         "compacted": "compacted: the window was just emptied; the next reply in the transcript refills the meter",
-        "fromTranscript": "estimated from the session transcript (the last reply's usage) because no status line is registered for this session",
+        "fromTranscript": "estimated from the session transcript (the last reply's usage)",
         "needsBoth": "payroll and electricity need the status line: {command}"
       },
       "needs": {
-        "payrollHead": "PAYROLL needs the status line — Claude Code reports cost only to its statusLine command",
-        "electricityHead": "ELECTRICITY needs the status line — Claude Code reports tokens per minute only to its statusLine command",
-        "none_one": "no status line is registered for this session (a plugin install or claude -p); MEMORY is estimated from the transcript",
-        "none_other": "no status line is registered for these {count} sessions (a plugin install or claude -p); MEMORY is estimated from the transcript",
-        "register": "register it with: {command} (from the Claude-Office checkout)"
+        "payrollHead": "PAYROLL needs status updates — cost is not reported by passive hooks",
+        "electricityHead": "ELECTRICITY needs status updates — tokens per minute are not reported by passive hooks",
+        "none_one": "MEMORY is estimated from the Antigravity session transcript",
+        "none_other": "MEMORY is estimated from the {count} Antigravity session transcripts",
+        "register": "configure hooks with: {command} (from the Antigravity-Office checkout)"
       }
     },
     "rooms": {
@@ -242,8 +242,8 @@
         "start": "Start it from the checkout: {command}  (or {alt})",
         "hooksSeen_one": "Hooks: {count} event since the server started, last {ago}",
         "hooksSeen_other": "Hooks: {count} events since the server started, last {ago}",
-        "hooksWaiting": "Hooks: nothing yet — they fire when Claude Code runs a tool",
-        "hooksMissing": "Hooks: nothing in {span}. If Claude Code is running tool calls and nothing appears, the hooks are not installed: {command}",
+        "hooksWaiting": "Hooks: nothing yet — they fire when Antigravity runs a tool",
+        "hooksMissing": "Hooks: nothing in {span}. If Antigravity is running tool calls and nothing appears, the hooks are not installed: {command}",
         "counts": "Sessions: {sessions} · agents: {agents} · clients: {clients}",
         "notHooked_one": "Not hooked: {names} — run {command} to see what it is doing",
         "notHooked_other": "Not hooked: {names} — run {command} to see what they are doing",
@@ -273,7 +273,7 @@
     "sessions": {
       "notHookedHint": "Not hooked — run `npm run install-hooks` (or /plugin install agent-office) to see what it is doing",
       "notHooked": "not hooked",
-      "ariaLabel": "Claude Code sessions",
+      "ariaLabel": "Antigravity sessions",
       "workers_one": "{count} worker",
       "workers_other": "{count} workers",
       "tip": {
@@ -473,11 +473,11 @@
       "on": "on",
       "off": "off",
       "answerHere": "Answer here: {state}",
-      "answerOnTitle": "Permission dialogs can be answered from the office (a card appears while Claude waits) — click to turn off",
+      "answerOnTitle": "Permission dialogs can be answered from the office (a card appears while Antigravity waits) — click to turn off",
       "answerOffTitle": "Permission dialogs are answered in the terminal only — click to let the office answer them",
       "notify": "Notify: {state}",
-      "notifyOnTitle": "A desktop notification (project and tool only) when Claude starts waiting on a permission — click to turn off",
-      "notifyOffTitle": "No desktop notification when Claude waits on a permission — click to turn on",
+      "notifyOnTitle": "A desktop notification (project and tool only) when Antigravity starts waiting on a permission — click to turn off",
+      "notifyOffTitle": "No desktop notification when Antigravity waits on a permission — click to turn on",
       "removeReaction": "Click to remove",
       "seen": "Seen",
       "seenAlt": "seen",
@@ -511,7 +511,7 @@
       },
       "offline": "Not connected. The office may be stopped, or this link was replaced:",
       "offlineAfter": "prints the current one.",
-      "metersEmpty": "No session has reported yet. Payroll, electricity and memory appear here once Claude Code is working.",
+      "metersEmpty": "No session has reported yet. Payroll, electricity and memory appear here once Antigravity is working.",
       "tabsAria": "Office panels"
     },
     "viewer": {
@@ -578,7 +578,7 @@
       "isBoss": "That is you.",
       "task": "Task",
       "noTask": "no task text",
-      "notHooked": "not hooked: known from Claude Code's session registry only, so there is no turn to show yet",
+      "notHooked": "not hooked: no hook events have arrived for this session yet",
       "lastPrompt": "Last prompt",
       "lastReply": "Last reply",
       "promptsHidden": "hidden: prompts off",
@@ -630,14 +630,14 @@
       "sendingDeny": "sending deny…",
       "rememberNote": "Allow & remember: {what}",
       "title": {
-        "use": "Claude wants to use {tool}",
-        "run": "Claude wants to run {what}",
-        "write": "Claude wants to write {what}",
-        "edit": "Claude wants to edit {what}",
-        "read": "Claude wants to read {what}",
-        "fetch": "Claude wants to fetch {what}",
-        "search": "Claude wants to search {what}",
-        "findFiles": "Claude wants to find files {what}"
+        "use": "Antigravity wants to use {tool}",
+        "run": "Antigravity wants to run {what}",
+        "write": "Antigravity wants to write {what}",
+        "edit": "Antigravity wants to edit {what}",
+        "read": "Antigravity wants to read {what}",
+        "fetch": "Antigravity wants to fetch {what}",
+        "search": "Antigravity wants to search {what}",
+        "findFiles": "Antigravity wants to find files {what}"
       },
       "remember": {
         "nothing": "Nothing to remember",
@@ -1409,7 +1409,7 @@
       "signOff": "Nice work, team."
     },
     "notify": {
-      "title": "Claude needs you",
+      "title": "Antigravity needs you",
       "message": "{project} · {tool} {phrase}",
       "bash": "wants to run a command",
       "write": "wants to write a file",

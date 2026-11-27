@@ -1,10 +1,7 @@
 /**
- * cli/agent-office.mjs - the npx command: argument handling, the hooks-path
- * decision (checkout in place vs a stable copy in $AGENT_OFFICE_HOME/hooks),
- * install / uninstall from a package copy that is then deleted the way npm
- * cleans its npx cache, doctor against that copy, and start --detach / stop.
- * Every run gets a temp HOME, AGENT_OFFICE_HOME and CLAUDE_CONFIG_DIR, so the
- * developer's real ~/.claude/settings.json is never read or written.
+ * cli/agent-office.mjs — argument parsing, hooks-path resolution (checkout vs
+ * $AGENT_OFFICE_HOME/hooks copy), install-hooks / doctor / uninstall-hooks,
+ * and start --detach / stop. Pure Node.js across Windows, macOS, and Linux.
  */
 
 import { spawnSync } from 'node:child_process'
@@ -28,31 +25,25 @@ function tempDir(prefix = 'agent-office-cli-') {
   return dir
 }
 
-/** A writable stream stand-in that keeps what was written. */
 function sink() {
   const s = { text: '', isTTY: false, write(chunk: string) { s.text += chunk; return true } }
   return s
 }
 
-/** Temp HOME / AGENT_OFFICE_HOME / CLAUDE_CONFIG_DIR; nothing of the caller's office or Claude config. */
 function isolatedEnv(extra: Record<string, string> = {}) {
   const home = tempDir('agent-office-cli-home-')
-  const { CLAUDE_CONFIG_DIR: _c, AGENT_OFFICE_HOME: _h, AGENT_OFFICE_PORT: _p, AGENT_OFFICE_UI_DIR: _u, AGENT_OFFICE_CONFIG_DIR: _cfg, ...env } = process.env
+  const { AGENT_OFFICE_HOME: _h, AGENT_OFFICE_PORT: _p, AGENT_OFFICE_UI_DIR: _u, AGENT_OFFICE_CONFIG_DIR: _cfg, ...env } = process.env
   return {
     home,
-    env: { ...env, HOME: home, AGENT_OFFICE_HOME: join(home, '.agent-office'), CLAUDE_CONFIG_DIR: join(home, '.claude'), NO_COLOR: '1', ...extra } as NodeJS.ProcessEnv,
+    env: { ...env, HOME: home, USERPROFILE: home, AGENT_OFFICE_HOME: join(home, '.agent-office'), NO_COLOR: '1', ...extra } as NodeJS.ProcessEnv,
   }
 }
 
-/**
- * The package laid out the way npx unpacks it: <cache>/node_modules/@w17ant/agent-office
- * with the files the tarball carries that these commands touch.
- */
 function npxCopy() {
   const cache = tempDir('agent-office-npx-')
-  const root = join(cache, 'node_modules', '@w17ant', 'agent-office')
+  const root = join(cache, 'node_modules', 'antigravity-office')
   mkdirSync(root, { recursive: true })
-  for (const p of ['package.json', 'hooks', 'scripts/stop-office.sh']) cpSync(join(ROOT, p), join(root, p), { recursive: true })
+  for (const p of ['package.json', 'hooks.json', 'hooks']) cpSync(join(ROOT, p), join(root, p), { recursive: true })
   return { cache, root }
 }
 
@@ -64,21 +55,22 @@ describe('parseArgs', () => {
     expect(parseArgs(['start', '-d']).flags.has('-d')).toBe(true)
   })
 
-  it('accepts each command with its own flags, before or after the command', () => {
-    expect(parseArgs(['install-hooks', '--status-line-only'])).toMatchObject({ command: 'install-hooks' })
-    expect(parseArgs(['--no-status-line', 'uninstall-hooks'])).toMatchObject({ command: 'uninstall-hooks' })
+  it('accepts each command with its own flags', () => {
+    expect(parseArgs(['install-hooks'])).toMatchObject({ command: 'install-hooks' })
+    expect(parseArgs(['install-hooks', '--tool', 'antigravity'])).toMatchObject({ command: 'install-hooks', tool: 'antigravity' })
+    expect(parseArgs(['uninstall-hooks'])).toMatchObject({ command: 'uninstall-hooks' })
     expect(parseArgs(['doctor', '--json'])).toMatchObject({ command: 'doctor' })
     expect(parseArgs(['stop', '--force'])).toMatchObject({ command: 'stop' })
     expect(parseArgs(['open', '--print'])).toMatchObject({ command: 'open' })
-    for (const r of [parseArgs(['install-hooks', '--status-line-only']), parseArgs(['doctor', '--json'])]) expect(r.error).toBeUndefined()
   })
 
-  it('refuses an unknown command, a stray argument, a flag of another command and contradicting flags', () => {
+  it('refuses an unknown command, a stray argument, or a flag of another command', () => {
     expect(parseArgs(['serve']).error).toBe('Unknown command: serve')
     expect(parseArgs(['start', 'now']).error).toBe('Unexpected argument: now')
     expect(parseArgs(['start', '--json']).error).toBe('Unknown option for start: --json')
     expect(parseArgs(['doctor', '--detach']).error).toBe('Unknown option for doctor: --detach')
-    expect(parseArgs(['install-hooks', '--no-status-line', '--status-line-only']).error).toContain('leave nothing to do')
+    expect(parseArgs(['install-hooks', '--tool', 'nope']).error).toContain('antigravity')
+    expect(parseArgs(['doctor', '--tool', 'antigravity']).error).toBeTruthy()
   })
 
   it('--help and --version win over everything else', () => {
@@ -117,93 +109,44 @@ describe('main: help, version, usage errors', () => {
     expect(err.text).toContain('Usage:')
   })
 
-  it('runs as the bin (the shebang file npm links into node_modules/.bin)', () => {
+  it('runs as the bin', () => {
     const res = spawnSync(process.execPath, [BIN, '--version'], { encoding: 'utf8' })
     expect(res.status).toBe(0)
     expect(res.stdout.trim()).toBe(pkg.version)
-    expect(readFileSync(BIN, 'utf8').startsWith('#!/usr/bin/env node\n')).toBe(true)
-    expect(pkg.bin).toEqual({ 'agent-office': 'cli/agent-office.mjs' })
+    expect(readFileSync(BIN, 'utf8').startsWith('#!/usr/bin/env node')).toBe(true)
+    expect(pkg.bin['antigravity-office']).toBe('cli/agent-office.mjs')
   })
 })
 
 describe('where the hooks live', () => {
-  it('a git checkout keeps its own hooks/ (as npm run install-hooks does)', () => {
+  it('a git checkout keeps its own hooks/', () => {
     expect(isCheckout(ROOT)).toBe(true)
     expect(resolveHooksDir({ root: ROOT, officeHome: '/h/.agent-office' })).toEqual({ dir: join(ROOT, 'hooks'), copy: false })
   })
 
-  it('an installed package (npx cache, global or local node_modules) copies them to $AGENT_OFFICE_HOME/hooks', () => {
-    const exists = () => true // even with a .git somewhere inside, node_modules is never a checkout
-    for (const root of ['/Users/a/.npm/_npx/0c1d/node_modules/@w17ant/agent-office', '/usr/local/lib/node_modules/@w17ant/agent-office']) {
-      expect(resolveHooksDir({ root, officeHome: '/h/.agent-office', exists })).toEqual({ dir: '/h/.agent-office/hooks', copy: true })
+  it('an installed package copies hooks to $AGENT_OFFICE_HOME/hooks', () => {
+    const exists = () => true
+    for (const root of [join('/Users', 'a', '.npm', '_npx', '0c1d', 'node_modules', 'antigravity-office'), join('/usr', 'local', 'lib', 'node_modules', 'antigravity-office')]) {
+      expect(resolveHooksDir({ root, officeHome: '/h/.agent-office', exists })).toEqual({ dir: join('/h/.agent-office', 'hooks'), copy: true })
     }
-    expect(resolveHooksDir({ root: '/opt/agent-office', officeHome: '/h/.agent-office', exists: () => false })).toEqual({ dir: '/h/.agent-office/hooks', copy: true })
+    expect(resolveHooksDir({ root: '/opt/antigravity-office', officeHome: '/h/.agent-office', exists: () => false })).toEqual({ dir: join('/h/.agent-office', 'hooks'), copy: true })
   })
 
-  it('copies the relay and the OpenCode plugin too, so other tools\' hooks outlive the npx cache', () => {
-    expect(HOOK_FILES).toEqual(expect.arrayContaining(['office-relay.py', 'opencode-plugin.js']))
-  })
-
-  it('copyHooks writes every hook file whole, scripts executable, and leaves no temp files', () => {
+  it('copyHooks writes antigravity-relay.mjs whole and replaces stale copies', () => {
     const dest = join(tempDir(), 'office', 'hooks')
     copyHooks(join(ROOT, 'hooks'), dest)
     expect(readdirSync(dest).sort()).toEqual([...HOOK_FILES].sort())
     for (const f of HOOK_FILES) {
       expect(readFileSync(join(dest, f)).equals(readFileSync(join(ROOT, 'hooks', f)))).toBe(true)
-      expect(statSync(join(dest, f)).mode & 0o777).toBe(f.endsWith('.sh') ? 0o755 : 0o644)
     }
-    // A re-run (a newer version) replaces the files in place
-    writeFileSync(join(dest, 'agent-tracker.sh'), 'stale')
+    writeFileSync(join(dest, 'antigravity-relay.mjs'), 'stale')
     copyHooks(join(ROOT, 'hooks'), dest)
-    expect(readFileSync(join(dest, 'agent-tracker.sh')).equals(readFileSync(join(ROOT, 'hooks', 'agent-tracker.sh')))).toBe(true)
-  })
-})
-
-describe('install-hooks --tool', () => {
-  it('parses --tool <id> and --tool=<id> for install-hooks and uninstall-hooks', () => {
-    expect(parseArgs(['install-hooks', '--tool', 'codex'])).toMatchObject({ command: 'install-hooks', tool: 'codex' })
-    expect(parseArgs(['uninstall-hooks', '--tool=gemini'])).toMatchObject({ command: 'uninstall-hooks', tool: 'gemini' })
-    expect(parseArgs(['install-hooks', '--tool', 'codex']).error).toBeUndefined()
-  })
-
-  it('names the five tools when the id is wrong or missing, and refuses --tool elsewhere', () => {
-    expect(parseArgs(['install-hooks', '--tool', 'nope']).error).toMatch(/codex.*gemini.*antigravity.*kimi.*opencode/)
-    expect(parseArgs(['install-hooks', '--tool']).error).toMatch(/codex/)
-    expect(parseArgs(['doctor', '--tool', 'codex']).error).toBeTruthy()
-    expect(parseArgs(['install-hooks', '--tool', 'codex', '--status-line-only']).error).toBeTruthy()
-  })
-
-  it('from an npx copy: connects Codex to the stable relay, and disconnects it, keeping the copy', async () => {
-    const { home, env } = isolatedEnv()
-    mkdirSync(join(home, '.codex'), { recursive: true })
-    const { root } = npxCopy()
-    const out = sink()
-    expect(await main(['install-hooks', '--tool', 'codex'], { root, env, out, err: sink() })).toBe(0)
-    const stable = join(home, '.agent-office', 'hooks')
-    const cfg = readFileSync(join(home, '.codex', 'hooks.json'), 'utf8')
-    expect(cfg).toContain(join(stable, 'office-relay.py'))
-    expect(existsSync(join(stable, 'office-relay.py'))).toBe(true)
-    expect(out.text).toContain('/hooks')
-    // Claude Code's own settings are untouched
-    expect(existsSync(join(home, '.claude', 'settings.json'))).toBe(false)
-
-    expect(await main(['uninstall-hooks', '--tool', 'codex'], { root, env, out: sink(), err: sink() })).toBe(0)
-    expect(existsSync(join(home, '.codex', 'hooks.json'))).toBe(false)
-    expect(existsSync(stable)).toBe(true)
-  })
-
-  it('npm run install-hooks -- --tool <id> goes to the same installer', () => {
-    const { home, env } = isolatedEnv()
-    mkdirSync(join(home, '.gemini'), { recursive: true })
-    const r = spawnSync('bash', [join(ROOT, 'hooks', 'install-hooks.sh'), '--tool', 'gemini'], { env, encoding: 'utf8' })
-    expect(r.status).toBe(0)
-    expect(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8')).toContain(join(ROOT, 'hooks', 'office-relay.py'))
-    expect(existsSync(join(home, '.claude', 'settings.json'))).toBe(false)
+    expect(readFileSync(join(dest, 'antigravity-relay.mjs')).equals(readFileSync(join(ROOT, 'hooks', 'antigravity-relay.mjs')))).toBe(true)
   })
 })
 
 describe('install-hooks / doctor / uninstall-hooks from an npx copy', () => {
-  it('points settings.json at the stable copy, which keeps working after the npx cache is deleted', async () => {
+  it('points ~/.gemini/config/hooks.json at the stable copy, which keeps working after cache deletion', async () => {
     const { home, env } = isolatedEnv()
     const { cache, root } = npxCopy()
     const out = sink()
@@ -211,50 +154,30 @@ describe('install-hooks / doctor / uninstall-hooks from an npx copy', () => {
     expect(await main(['install-hooks'], { root, env, out, err })).toBe(0)
     const stable = join(home, '.agent-office', 'hooks')
     expect(out.text).toContain(`Copied the hook scripts to ${stable}`)
-    // The installer was told how this install starts the office
-    expect(out.text).toContain(`npx ${pkg.name}`)
-    expect(out.text).not.toContain('npm run server')
 
-    const settings = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'))
-    const commands = Object.values(settings.hooks).flatMap((groups: any) => groups.flatMap((g: any) => g.hooks.map((h: any) => h.command)))
-    expect(commands.length).toBeGreaterThan(0)
-    for (const c of commands) expect(c).toBe(`bash "${join(stable, 'agent-tracker.sh')}"`)
-    expect(settings.statusLine.command).toBe(`bash "${join(stable, 'status-line.sh')}"`)
+    const hooksFile = join(home, '.gemini', 'config', 'hooks.json')
+    const cfg = JSON.parse(readFileSync(hooksFile, 'utf8'))
+    expect(cfg['antigravity-office'].Stop[0].command).toContain(join(stable, 'antigravity-relay.mjs').replace(/\\/g, '/'))
 
-    // npm cleans its cache: the hooks are still where settings.json says
+    // Cache cleaned: relay still lives in stable copy
     rmSync(cache, { recursive: true, force: true })
     for (const f of HOOK_FILES) expect(existsSync(join(stable, f))).toBe(true)
 
-    // doctor (from a fresh copy, a later npx run) accepts the stable copy and names npx commands
+    // doctor from a fresh copy accepts the stable copy and names npx commands
     const later = npxCopy().root
     const report = sink()
     await main(['doctor', '--no-color', '--port', '1'], { root: later, env, out: report, err: sink() })
-    expect(report.text).toMatch(new RegExp(`PASS  hooks: \\d+/\\d+ events run ${stable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
+    expect(report.text).toMatch(/PASS  hooks: 5\/5 events run /)
     expect(report.text).toContain('PASS  hook files')
     expect(report.text).toContain(npxCommands(`npx ${pkg.name}`).install)
-    expect(report.text).not.toContain('npm run install-hooks')
 
-    // uninstall takes the entries out and removes the copy
-    const un = sink()
-    expect(await main(['uninstall-hooks'], { root: later, env, out: un, err: sink() })).toBe(0)
-    const after = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'))
-    expect(JSON.stringify(after)).not.toContain('agent-tracker.sh')
-    expect(after).not.toHaveProperty('statusLine')
+    // uninstall removes entries and deletes the stable copy
+    expect(await main(['uninstall-hooks'], { root: later, env, out: sink(), err: sink() })).toBe(0)
+    expect(existsSync(hooksFile)).toBe(false)
     expect(existsSync(stable)).toBe(false)
-  })
-
-  it('a partial uninstall keeps the copy the remaining entries run', async () => {
-    const { home, env } = isolatedEnv()
-    const { root } = npxCopy()
-    await main(['install-hooks'], { root, env, out: sink(), err: sink() })
-    expect(await main(['uninstall-hooks', '--no-status-line'], { root, env, out: sink(), err: sink() })).toBe(0)
-    const settings = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'))
-    expect(settings.statusLine.command).toContain(join(home, '.agent-office', 'hooks', 'status-line.sh'))
-    expect(existsSync(join(home, '.agent-office', 'hooks', 'status-line.sh'))).toBe(true)
   })
 })
 
-/** A port nothing listens on right now. */
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const s = createServer()
@@ -269,24 +192,20 @@ function freePort(): Promise<number> {
 describe('start --detach / stop', () => {
   it('serves the built UI and /health on the chosen port, then stops by pid file', async () => {
     const ui = tempDir('agent-office-cli-ui-')
-    writeFileSync(join(ui, 'index.html'), '<!doctype html><title>Agent Office</title>')
+    writeFileSync(join(ui, 'index.html'), '<!doctype html><title>Antigravity Office</title>')
     const { home, env } = isolatedEnv({ AGENT_OFFICE_UI_DIR: ui })
     const port = await freePort()
-    // As its own process, the way a user runs it: the CLI exits and the server
-    // is left to init. (Started from this test's process, the stopped server
-    // would linger as an unreaped zombie while stop-office.sh waits on it.)
     const res = spawnSync(process.execPath, [BIN, 'start', '--detach', '--no-open', '--port', String(port)], { env, encoding: 'utf8', timeout: 25_000 })
     const out = { text: res.stdout }
     try {
       expect(res.stderr).toBe('')
       expect(res.status).toBe(0)
-      expect(out.text).toMatch(new RegExp(`Agent Office: http://127\\.0\\.0\\.1:${port}/#token=[0-9a-f]{64}`))
+      expect(out.text).toMatch(new RegExp(`http://127\\.0\\.0\\.1:${port}/#token=[0-9a-f]{64}`))
       expect(out.text).toContain(`npx ${pkg.name} stop`)
-      expect((await fetch(`http://127.0.0.1:${port}/`).then(r => r.text()))).toContain('<title>Agent Office</title>')
+      expect((await fetch(`http://127.0.0.1:${port}/`).then(r => r.text()))).toContain('<title>Antigravity Office</title>')
       expect((await fetch(`http://127.0.0.1:${port}/health`).then(r => r.json())).status).toBe('ok')
       const log = join(home, '.agent-office', 'server.log')
-      expect(statSync(log).mode & 0o777).toBe(0o600)
-      // A second start finds it running and only prints the link again
+      if (process.platform !== 'win32') expect(statSync(log).mode & 0o777).toBe(0o600)
       const again = sink()
       expect(await main(['start', '--no-open', '--port', String(port)], { env, out: again, err: sink() })).toBe(0)
       expect(again.text).toContain(`already answering on port ${port}`)

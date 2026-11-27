@@ -27,9 +27,9 @@ const m = require('../electron/mac-update.cjs')
 const p = require('../electron/update-plan.cjs')
 
 const onMac = process.platform === 'darwin'
-const RELEASE = 'github.com/W17ant/Claude-Office/releases/download'
+const RELEASE = 'github.com/ammarsufyan/Antigravity-Office/releases/download'
 const ZIP_NAME = 'Agent-Office-1.2.0-mac-arm64.zip'
-const UPDATE = { version: 'v1.2.0', url: 'https://github.com/W17ant/Claude-Office/releases/tag/v1.2.0' }
+const UPDATE = { version: 'v1.2.0', url: 'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1.2.0' }
 
 const sha512 = (data: Buffer | string) => createHash('sha512').update(data).digest('base64')
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -137,8 +137,8 @@ describe('openDownload: https, GitHub hosts only, every redirect checked', () =>
     routes.set(`${RELEASE}/v1.2.0/evil.zip`, redirect('https://downloads.example.com/a.zip'))
     routes.set(`${RELEASE}/v1.2.0/plain.zip`, redirect('http://release-assets.githubusercontent.com/asset/1'))
     routes.set(`${RELEASE}/v1.2.0/local.zip`, redirect('http://127.0.0.1:1/a.zip'))
-    routes.set(`${RELEASE}/v1.2.0/relative.zip`, redirect('/W17ant/Claude-Office/elsewhere.zip', 301))
-    routes.set('github.com/W17ant/Claude-Office/elsewhere.zip', body('moved'))
+    routes.set(`${RELEASE}/v1.2.0/relative.zip`, redirect('/ammarsufyan/Antigravity-Office/elsewhere.zip', 301))
+    routes.set('github.com/ammarsufyan/Antigravity-Office/elsewhere.zip', body('moved'))
     for (const name of ['evil.zip', 'plain.zip', 'local.zip']) {
       await expect(m.fetchText(`https://${RELEASE}/v1.2.0/${name}`, { ...opts, maxBytes: 100 })).rejects.toThrow('outside GitHub')
     }
@@ -313,7 +313,7 @@ describe('createMacBackend.prepare: what stops an update before anything is unpa
   it('asks GitHub for that release\'s latest-mac.yml, and stops when it is not there', async () => {
     const { backend, parent } = installed()
     await expect(backend.prepare(UPDATE)).rejects.toThrow('HTTP 404')
-    expect(seen).toEqual(['https://github.com/W17ant/Claude-Office/releases/download/v1.2.0/latest-mac.yml'])
+    expect(seen).toEqual(['https://github.com/ammarsufyan/Antigravity-Office/releases/download/v1.2.0/latest-mac.yml'])
     expect(stagesIn(parent)).toEqual([])
     expect(backend.staged).toBeNull()
   })

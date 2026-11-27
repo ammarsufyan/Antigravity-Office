@@ -296,12 +296,12 @@ describe('end to end: the real hook claims from the real server', () => {
     removeOffice(office)
   })
 
-  /** hooks/agent-tracker.sh on a payload, against this office (spawned async: the server lives on this event loop). */
+  /** hooks/antigravity-relay.mjs Stop on a payload, against this office (pure Node.js cross-platform). */
   function runHook(payload: unknown) {
     const env: Record<string, string | undefined> = { ...process.env, AGENT_OFFICE_HOME: office.dir, AGENT_OFFICE_PORT: String(port) }
     delete env.AGENT_OFFICE_EVENT_URL
     return new Promise<string>((resolve, reject) => {
-      const child = spawn('bash', [join(__dirname, '..', 'hooks', 'agent-tracker.sh')], { env, stdio: ['pipe', 'pipe', 'inherit'] })
+      const child = spawn(process.execPath, [join(__dirname, '..', 'hooks', 'antigravity-relay.mjs'), 'Stop'], { env, stdio: ['pipe', 'pipe', 'inherit'] })
       let out = ''
       child.stdout.setEncoding('utf8').on('data', c => { out += c })
       child.on('error', reject)
@@ -310,18 +310,19 @@ describe('end to end: the real hook claims from the real server', () => {
     })
   }
 
-  it('queued on the page, delivered once by the Stop hook as a block decision; both sides agree on the proof of non-ASCII text', async () => {
-    await postEvent(office.server, { type: 'session_started', ...ALPHA, source: 'startup' })
+  it('queued on the page, delivered once by the Antigravity Stop hook as a continue decision; both sides agree on the proof of non-ASCII text', async () => {
+    const agySid = `antigravity:${SID}`
+    await postEvent(office.server, { type: 'session_started', sessionId: agySid, client: 'antigravity', project: 'alpha', cwd: ALPHA.cwd, source: 'startup' })
     const text = 'fix the failing test — and say “done” 🎉'
     const queued = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.UI_TOKEN}`).send({ sender: 'Boss', text: `@alpha ${text}` })
     expect(queued.status).toBe(200)
-    const stop = { session_id: SID, cwd: ALPHA.cwd, transcript_path: `/t/${SID}.jsonl`, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'ok', background_tasks: [], session_crons: [] }
+    const stop = { conversationId: SID, workspacePaths: [ALPHA.cwd], status: 'completed', assistantResponse: 'ok' }
     const first = JSON.parse(await runHook(stop))
-    expect(first.decision).toBe('block')
+    expect(first.decision).toBe('continue')
     expect(first.reason.endsWith(`\n\n${text}`)).toBe(true)
-    expect(office.server.sessions.get(SID)?.main?.state).toBe('working')
+    expect(office.server.sessions.get(agySid)?.main?.state).toBe('working')
     // Delivered once: the marker is gone, and the next Stop ends the turn as usual
-    expect(existsSync(join(office.server.PROMPT_QUEUE_DIR, SID))).toBe(false)
-    expect(await runHook({ ...stop, stop_hook_active: true })).toBe('')
+    expect(existsSync(join(office.server.PROMPT_QUEUE_DIR, `antigravity_${SID}`))).toBe(false)
+    expect((await runHook(stop)).trim()).toBe('{}')
   })
 })

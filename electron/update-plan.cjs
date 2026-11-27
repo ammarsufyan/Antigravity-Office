@@ -34,7 +34,7 @@ const APP_BUNDLE_ID = 'com.agentoffice.app'
 // Where release assets are fetched from. A literal, on purpose: there is no
 // setting, argument or environment variable that points a packaged app's
 // updater anywhere else.
-const RELEASE_DOWNLOAD_PREFIX = 'https://github.com/W17ant/Claude-Office/releases/download/'
+const RELEASE_DOWNLOAD_PREFIX = 'https://github.com/ammarsufyan/Antigravity-Office/releases/download/'
 
 // Why these three: a release asset URL on github.com answers 302 to a signed
 // URL on one of GitHub's two asset hosts (objects.* is the older, release-assets.*

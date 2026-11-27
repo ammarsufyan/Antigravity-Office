@@ -56,9 +56,9 @@
         "readOnly": "Halaman hanya-baca: tidak ada token kantor, jadi server akan menolak perubahan. Buka link dari npm run open untuk mengubahnya.",
         "waiting": "Server kantor belum menjawab.",
         "answer": "Jawab izin di sini",
-        "answerTitle": "Dialog izin bisa dijawab dari kartu di kantor selagi Claude menunggu",
+        "answerTitle": "Dialog izin bisa dijawab dari kartu di kantor selagi Antigravity menunggu",
         "notify": "Notifikasi saat menunggu izin",
-        "notifyTitle": "Notifikasi desktop saat Claude mulai menunggu izin",
+        "notifyTitle": "Notifikasi desktop saat Antigravity mulai menunggu izin",
         "logging": "Pencatatan prompt",
         "logOff": "Mati",
         "logSummary": "Ringkas",
@@ -68,7 +68,7 @@
         "hintFull": "Prompt dan balasan hingga 2000 karakter.",
         "rowsStay": "Baris yang sudah ada di chat.db tetap ada sampai",
         "ai": "Pemantau chat AI",
-        "aiTitle": "Pemantau chat yang membuat Claude bisa menjawab di #office-general",
+        "aiTitle": "Pemantau chat yang membuat Antigravity bisa menjawab di #office-general",
         "bossSprite": "Sprite bos:",
         "bossSpriteIn": "di",
         "bossSpriteWhen": "(dibaca saat server mulai).",
@@ -104,7 +104,7 @@
         "model": "model {model}",
         "effort": " · effort {effort}",
         "over200k": " · di atas 200k",
-        "claudeCode": " · Claude Code {version}",
+        "claudeCode": " · Antigravity {version}",
         "costLine": "{amount} · {duration} · sesi {id}",
         "rateHead": "BATAS PEMAKAIAN (langganan claude.ai)",
         "rate5h": "jendela 5 jam terpakai {percent}%",
@@ -112,27 +112,27 @@
         "resets": " · reset {time}",
         "spendLimit": "batas belanja terpakai {percent}%"
       },
-      "clutter": "🗂️ Meja Claude mulai berantakan — {session} sudah di {percent}% konteks",
-      "clutterEstimated": "🗂️ Meja Claude mulai berantakan — {session} sudah di {percent}% konteks (perkiraan)",
+      "clutter": "🗂️ Meja Antigravity mulai berantakan — {session} sudah di {percent}% konteks",
+      "clutterEstimated": "🗂️ Meja Antigravity mulai berantakan — {session} sudah di {percent}% konteks (perkiraan)",
       "unnamedModel": "model tanpa nama",
       "window": {
         "oneM": "window {size} token: sesi ini memakai varian [1m] dari {model}",
         "unknown": "window {size} token diasumsikan: {model} tidak ada di tabel model kantor, jadi angkanya kira-kira",
         "overflow": "window {size} token diasumsikan: lebih dari 200.000 terpakai, jadi {model} pasti memakai varian 1M (kira-kira)",
-        "table": "window {size} token untuk {model} (tabel model Claude Code)"
+        "table": "window {size} token untuk {model} (tabel model)"
       },
       "estimate": {
         "estSuffix": " · perk.",
         "compacted": "dipadatkan: window baru saja dikosongkan; balasan berikutnya di transkrip akan mengisi meteran lagi",
-        "fromTranscript": "diperkirakan dari transkrip sesi (pemakaian balasan terakhir) karena tidak ada status line terdaftar untuk sesi ini",
+        "fromTranscript": "diperkirakan dari transkrip sesi (pemakaian balasan terakhir)",
         "needsBoth": "gaji dan listrik butuh status line: {command}"
       },
       "needs": {
-        "payrollHead": "GAJI butuh status line — Claude Code hanya melaporkan biaya ke perintah statusLine-nya",
-        "electricityHead": "LISTRIK butuh status line — Claude Code hanya melaporkan token per menit ke perintah statusLine-nya",
-        "none_one": "tidak ada status line terdaftar untuk sesi ini (instalasi plugin atau claude -p); MEMORI diperkirakan dari transkrip",
-        "none_other": "tidak ada status line terdaftar untuk {count} sesi ini (instalasi plugin atau claude -p); MEMORI diperkirakan dari transkrip",
-        "register": "daftarkan dengan: {command} (dari checkout Claude-Office)"
+        "payrollHead": "GAJI butuh status update — biaya tidak dilaporkan oleh hook pasif",
+        "electricityHead": "LISTRIK butuh status update — token per menit tidak dilaporkan oleh hook pasif",
+        "none_one": "MEMORI diperkirakan dari transkrip sesi Antigravity",
+        "none_other": "MEMORI diperkirakan dari {count} transkrip sesi Antigravity",
+        "register": "pasang hook dengan: {command} (dari checkout Antigravity-Office)"
       }
     },
     "rooms": {
@@ -245,8 +245,8 @@
         "start": "Jalankan dari checkout: {command}  (atau {alt})",
         "hooksSeen_one": "Hook: {count} event sejak server mulai, terakhir {ago}",
         "hooksSeen_other": "Hook: {count} event sejak server mulai, terakhir {ago}",
-        "hooksWaiting": "Hook: belum ada — hook berjalan saat Claude Code memakai tool",
-        "hooksMissing": "Hook: tidak ada apa-apa dalam {span}. Kalau Claude Code sedang memanggil tool dan tidak ada yang muncul, hook belum terpasang: {command}",
+        "hooksWaiting": "Hook: belum ada — hook berjalan saat Antigravity memakai tool",
+        "hooksMissing": "Hook: tidak ada apa-apa dalam {span}. Kalau Antigravity sedang memanggil tool dan tidak ada yang muncul, hook belum terpasang: {command}",
         "counts": "Sesi: {sessions} · agen: {agents} · klien: {clients}",
         "notHooked_one": "Tanpa hook: {names} — jalankan {command} untuk melihat apa yang sedang dikerjakannya",
         "notHooked_other": "Tanpa hook: {names} — jalankan {command} untuk melihat apa yang sedang mereka kerjakan",
@@ -276,7 +276,7 @@
     "sessions": {
       "notHookedHint": "Tanpa hook — jalankan `npm run install-hooks` (atau /plugin install agent-office) untuk melihat apa yang sedang dikerjakannya",
       "notHooked": "tanpa hook",
-      "ariaLabel": "Sesi Claude Code",
+      "ariaLabel": "Sesi Antigravity",
       "workers_one": "{count} pekerja",
       "workers_other": "{count} pekerja",
       "tip": {
@@ -475,11 +475,11 @@
       "on": "nyala",
       "off": "mati",
       "answerHere": "Jawab di sini: {state}",
-      "answerOnTitle": "Dialog izin bisa dijawab dari kantor (kartu muncul selagi Claude menunggu) — klik untuk mematikan",
+      "answerOnTitle": "Dialog izin bisa dijawab dari kantor (kartu muncul selagi Antigravity menunggu) — klik untuk mematikan",
       "answerOffTitle": "Dialog izin hanya dijawab di terminal — klik agar kantor bisa menjawabnya",
       "notify": "Notifikasi: {state}",
-      "notifyOnTitle": "Notifikasi desktop (hanya proyek dan tool) saat Claude mulai menunggu izin — klik untuk mematikan",
-      "notifyOffTitle": "Tidak ada notifikasi desktop saat Claude menunggu izin — klik untuk menyalakan",
+      "notifyOnTitle": "Notifikasi desktop (hanya proyek dan tool) saat Antigravity mulai menunggu izin — klik untuk mematikan",
+      "notifyOffTitle": "Tidak ada notifikasi desktop saat Antigravity menunggu izin — klik untuk menyalakan",
       "removeReaction": "Klik untuk menghapus",
       "seen": "Dibaca",
       "seenAlt": "dibaca",
@@ -513,7 +513,7 @@
       },
       "offline": "Tidak tersambung. Kantornya mungkin berhenti, atau link ini sudah diganti:",
       "offlineAfter": "mencetak link yang berlaku.",
-      "metersEmpty": "Belum ada sesi yang melapor. Gaji, listrik dan memori muncul di sini begitu Claude Code bekerja.",
+      "metersEmpty": "Belum ada sesi yang melapor. Gaji, listrik dan memori muncul di sini begitu Antigravity bekerja.",
       "tabsAria": "Panel kantor"
     },
     "viewer": {
@@ -580,7 +580,7 @@
       "isBoss": "Itu kamu.",
       "task": "Tugas",
       "noTask": "tidak ada teks tugas",
-      "notHooked": "tanpa hook: hanya diketahui dari registry sesi Claude Code, jadi belum ada giliran untuk ditampilkan",
+      "notHooked": "tanpa hook: belum ada event hook untuk sesi ini",
       "lastPrompt": "Prompt terakhir",
       "lastReply": "Balasan terakhir",
       "promptsHidden": "disembunyikan: prompt mati",
@@ -632,14 +632,14 @@
       "sendingDeny": "mengirim penolakan…",
       "rememberNote": "Izinkan & ingat: {what}",
       "title": {
-        "use": "Claude ingin memakai {tool}",
-        "run": "Claude ingin menjalankan {what}",
-        "write": "Claude ingin menulis {what}",
-        "edit": "Claude ingin mengedit {what}",
-        "read": "Claude ingin membaca {what}",
-        "fetch": "Claude ingin mengambil {what}",
-        "search": "Claude ingin mencari {what}",
-        "findFiles": "Claude ingin mencari file {what}"
+        "use": "Antigravity ingin memakai {tool}",
+        "run": "Antigravity ingin menjalankan {what}",
+        "write": "Antigravity ingin menulis {what}",
+        "edit": "Antigravity ingin mengedit {what}",
+        "read": "Antigravity ingin membaca {what}",
+        "fetch": "Antigravity ingin mengambil {what}",
+        "search": "Antigravity ingin mencari {what}",
+        "findFiles": "Antigravity ingin mencari file {what}"
       },
       "remember": {
         "nothing": "Tidak ada yang perlu diingat",
@@ -1254,7 +1254,7 @@
       "signOff": "Kerja bagus, tim."
     },
     "notify": {
-      "title": "Claude butuh kamu",
+      "title": "Antigravity butuh kamu",
       "message": "{project} · {tool} {phrase}",
       "bash": "ingin menjalankan perintah",
       "write": "ingin menulis file",

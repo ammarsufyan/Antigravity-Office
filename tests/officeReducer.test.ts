@@ -674,13 +674,13 @@ const msgs = (effects: OfficeEffect[]) => effects.filter(e => e.kind === 'msg') 
 const titles = (effects: OfficeEffect[]) => effects.filter(e => e.kind === 'title').map(e => (e as { prefix: string }).prefix)
 
 describe('one Claude per session', () => {
-  it('names the session\'s character after its tool when it is another AI tool (codex:…)', () => {
-    const { state, effects } = reduceOffice(liveOffice(), { type: 'session_started', sessionId: 'codex:abc', project: 'demo', cwd: '/x/demo' }, env())
-    const c = claudeOf(state, 'codex:abc')!
-    expect(c.name).toBe('Codex')
-    expect(c.task).toBe('Codex · demo')
-    expect(msgs(effects)[0]).toMatchObject({ sender: 'Codex' })
-    // A Claude Code session is still Claude
+  it('names the session\'s character after its tool when it is an Antigravity session (antigravity:…)', () => {
+    const { state, effects } = reduceOffice(liveOffice(), { type: 'session_started', sessionId: 'antigravity:abc', project: 'demo', cwd: '/x/demo' }, env())
+    const c = claudeOf(state, 'antigravity:abc')!
+    expect(c.name).toBe('Antigravity')
+    expect(c.task).toBe('Antigravity · demo')
+    expect(msgs(effects)[0]).toMatchObject({ sender: 'Antigravity' })
+    // A direct /event session falls back to the assistant config title
     expect(claudeOf(reduceOffice(liveOffice(), { type: 'session_started', ...S1 }, env()).state, 's1')!.name).toBe('Claude')
   })
 

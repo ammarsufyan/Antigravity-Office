@@ -18,9 +18,9 @@ const require = createRequire(import.meta.url)
 const a = require('../electron/auto-update.cjs')
 const u = require('../electron/update-check.cjs')
 
-const PAGE = 'https://github.com/W17ant/Claude-Office/releases/tag/v1.2.0'
+const PAGE = 'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1.2.0'
 const UPDATE = { version: 'v1.2.0', url: PAGE }
-const NEXT = { version: 'v1.3.0', url: 'https://github.com/W17ant/Claude-Office/releases/tag/v1.3.0' }
+const NEXT = { version: 'v1.3.0', url: 'https://github.com/ammarsufyan/Antigravity-Office/releases/tag/v1.3.0' }
 
 const stateFile = () => join(mkdtempSync(join(tmpdir(), 'agent-office-auto-update-')), 'update-check.json')
 /** Let the promise chain inside `offer` run to its end. */

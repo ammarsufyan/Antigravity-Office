@@ -20,7 +20,7 @@ const render = (props: Partial<React.ComponentProps<typeof LanguagePicker>> = {}
 
 describe('reportUrl', () => {
   it('opens the translation form with the language filled in', () => {
-    expect(reportUrl('zh-TW')).toBe('https://github.com/W17ant/Claude-Office/issues/new?template=translation.yml&language=zh-TW')
+    expect(reportUrl('zh-TW')).toBe('https://github.com/ammarsufyan/Antigravity-Office/issues/new?template=translation.yml&language=zh-TW')
   })
 })
 

@@ -32,12 +32,12 @@ export const PERMISSION_NOTIFY_THROTTLE_MS = 60_000
 // lands well inside it.
 export const PERMISSION_NOTIFY_DELAY_MS = 300
 
-/** The banner's title in the office's language (English: "Claude needs you"). */
+/** The banner's title in the office's language (English: "Antigravity needs you"). */
 export function permissionNotifyTitle() {
   return t('server.notify.title')
 }
 // Kept for callers that want the English title
-export const PERMISSION_NOTIFY_TITLE = 'Claude needs you'
+export const PERMISSION_NOTIFY_TITLE = 'Antigravity needs you'
 
 // Why: notification banners truncate long lines anyway; a project or tool name
 // past this is junk or an attack on the banner, not something to show.
