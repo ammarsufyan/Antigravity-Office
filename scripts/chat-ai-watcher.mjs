@@ -72,9 +72,17 @@ export function clampReply(raw) {
   return text
 }
 
+const DEFAULT_MODEL = 'gemini-4-hydrogen-low'
+
 /** CLI args for a non-interactive one-shot `agy -p` call. */
-export function buildAgyArgs(prompt, { model = 'flash', timeoutSec = 60 } = {}) {
-  return ['-p', prompt, '--model', model, '--disable-slash-commands', '--print-timeout', `${timeoutSec}s`]
+export function buildAgyArgs(prompt, { model = DEFAULT_MODEL, timeoutSec = 60 } = {}) {
+  const m = model && model !== 'default' ? model : ''
+  return [
+    '-p', prompt,
+    ...(m ? ['--model', m] : []),
+    '--disable-slash-commands',
+    '--print-timeout', `${timeoutSec}s`,
+  ]
 }
 
 function isHumanMessage(m) {
@@ -125,7 +133,7 @@ export async function startWatcher(env = process.env) {
   const port = Number(env.AGENT_OFFICE_PORT) || 3334
   const server = `http://127.0.0.1:${port}`
   const pollMs = Math.max(100, Math.round((Number(env.CHAT_AI_POLL_INTERVAL) || 8) * 1000))
-  const model = env.CHAT_AI_MODEL || 'flash'
+  const model = (env.CHAT_AI_MODEL || DEFAULT_MODEL).trim()
   const timeoutSec = Math.max(5, Number(env.CHAT_AI_TIMEOUT) || 60)
   const maxPerMin = Math.max(1, Number(env.CHAT_AI_MAX_REPLIES_PER_MIN) || 5)
   const cli = env.CHAT_AI_CLI || 'agy'
@@ -156,7 +164,7 @@ export async function startWatcher(env = process.env) {
     saveTs(lastTs)
   }
 
-  console.log(`[chat-ai] Started (pid ${process.pid}), polling ${server} every ${pollMs / 1000}s, cli=${cli}, model=${model}`)
+  console.log(`[chat-ai] Started (pid ${process.pid}), polling ${server} every ${pollMs / 1000}s, cli=${cli}, model=${model || 'default'}`)
 
   const callTimes = []
   let busy = false

@@ -254,8 +254,11 @@ describe('chat-ai-watcher.mjs (agy -p)', () => {
       'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen',
     )
     expect([...clampReply('好'.repeat(60))]).toHaveLength(40)
-    expect(buildAgyArgs('hello', { model: 'flash', timeoutSec: 30 })).toEqual([
-      '-p', 'hello', '--model', 'flash', '--disable-slash-commands', '--print-timeout', '30s',
+    expect(buildAgyArgs('hello', { timeoutSec: 30 })).toEqual([
+      '-p', 'hello', '--model', 'gemini-4-hydrogen-low', '--disable-slash-commands', '--print-timeout', '30s',
+    ])
+    expect(buildAgyArgs('hello', { model: 'default', timeoutSec: 30 })).toEqual([
+      '-p', 'hello', '--disable-slash-commands', '--print-timeout', '30s',
     ])
   })
 })
